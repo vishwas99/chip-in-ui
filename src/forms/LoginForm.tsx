@@ -9,7 +9,8 @@ import { login } from "../util/restClient";
 import axios from 'axios';
 // import authService from "../services/authService";
 import { useRouter } from 'expo-router';
-// import Cookies from '@react-native-cookies/cookies';
+import * as AuthService from "../util/authService";
+// ...
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "";
 const LOGIN_CONTEXT = process.env.EXPO_PUBLIC_LOGIN_CONTEXT || "/auth/login";
@@ -28,21 +29,22 @@ const LoginForm = () => {
   const router = useRouter();
 
   const onLogin = async (data: any) => {
-    console.log("Login Requested:", data);
     try {
       console.log("API URL:", API_BASE_URL + LOGIN_CONTEXT);
-      
+
       const response = await axios.post(API_BASE_URL + LOGIN_CONTEXT, data);
-      // setData(response.data);
-      console.log("Response data:", response.data);
-      if(response.status === 200){
-        console.log("Login successful");
-        // const cookies = await Cookies.get(API_BASE_URL);
-        // console.log('Cookies stored:', cookies);
-        // Navigate to the home page or perform any other action
-        router.navigate("/components/HomePage");
+
+      if (response.status === 200 || response.status === 201) {
+        const { userId, sessionId } = response.data;
+
+        if (AuthService && AuthService.saveAuthData) {
+          await AuthService.saveAuthData(userId, sessionId);
+        }
+
+        // Navigate to the home page with userId params for session persistence
+        router.push({ pathname: "/home", params: { userId: userId, username: (response.data as any).user.name } });
       }
-      
+
     } catch (error) {
       console.error('Error fetching data:', error);
     }

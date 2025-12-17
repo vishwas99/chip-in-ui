@@ -9,9 +9,9 @@ export interface Group {
     name: string;
     description?: string;
     avatarUrl?: string | null;
-    memberCount: number;
+    memberCount?: number;
     createdAt: string;
-    userBalance: UserBalance;
+    userBalances: UserBalance[];
 }
 
 export const MOCK_GROUPS: Group[] = [
@@ -22,11 +22,11 @@ export const MOCK_GROUPS: Group[] = [
         avatarUrl: 'https://i.pravatar.cc/150?u=goa',
         memberCount: 6,
         createdAt: '2024-01-15T10:00:00Z',
-        userBalance: {
+        userBalances: [{
             amount: 5400.50,
             currency: 'INR',
             status: 'OWED'
-        }
+        }]
     },
     {
         id: '2',
@@ -35,11 +35,11 @@ export const MOCK_GROUPS: Group[] = [
         avatarUrl: null,
         memberCount: 3,
         createdAt: '2023-08-01T09:00:00Z',
-        userBalance: {
+        userBalances: [{
             amount: 1250.00,
             currency: 'INR',
             status: 'OWES'
-        }
+        }]
     },
     {
         id: '3',
@@ -48,11 +48,11 @@ export const MOCK_GROUPS: Group[] = [
         avatarUrl: 'https://i.pravatar.cc/150?u=lunch',
         memberCount: 8,
         createdAt: '2023-12-01T12:30:00Z',
-        userBalance: {
+        userBalances: [{
             amount: 0,
             currency: 'INR',
             status: 'SETTLED'
-        }
+        }]
     },
     {
         id: '4',
@@ -61,10 +61,10 @@ export const MOCK_GROUPS: Group[] = [
         avatarUrl: null,
         memberCount: 12,
         createdAt: '2023-11-20T18:00:00Z',
-        userBalance: {
+        userBalances: [{
             amount: 200.00,
             currency: 'INR',
             status: 'OWES'
-        }
+        }]
     }
 ];

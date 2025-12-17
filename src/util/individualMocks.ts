@@ -5,7 +5,7 @@ export interface IndividualUser {
     name: string;
     email?: string;
     avatarUrl?: string | null;
-    balance: UserBalance;
+    balances: UserBalance[];
 }
 
 export const MOCK_INDIVIDUALS: IndividualUser[] = [
@@ -14,43 +14,43 @@ export const MOCK_INDIVIDUALS: IndividualUser[] = [
         name: 'Rahul Sharma',
         email: 'rahul@example.com',
         avatarUrl: 'https://i.pravatar.cc/150?u=rahul',
-        balance: {
+        balances: [{
             amount: 500.00,
             currency: 'INR',
             status: 'OWED'
-        }
+        }]
     },
     {
         id: '102',
         name: 'Priya Patel',
         email: 'priya@example.com',
         avatarUrl: 'https://i.pravatar.cc/150?u=priya',
-        balance: {
+        balances: [{
             amount: 1500.00,
             currency: 'INR',
             status: 'OWES'
-        }
+        }]
     },
     {
         id: '103',
         name: 'Amit Kumar',
         email: 'amit@example.com',
         avatarUrl: null,
-        balance: {
+        balances: [{
             amount: 0,
             currency: 'INR',
             status: 'SETTLED'
-        }
+        }]
     },
     {
         id: '104',
         name: 'Sneha Gupta',
         email: 'sneha@example.com',
         avatarUrl: 'https://i.pravatar.cc/150?u=sneha',
-        balance: {
+        balances: [{
             amount: 350.00,
             currency: 'INR',
             status: 'OWED'
-        }
+        }]
     }
 ];

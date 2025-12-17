@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import LoginForm from "./forms/LoginForm";
+import LoginForm from '../src/forms/LoginForm';
 import { useNavigation } from "@react-navigation/native";
 
 const LoginScreen: React.FC = () => {

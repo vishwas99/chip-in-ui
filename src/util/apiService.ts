@@ -5,11 +5,19 @@ export interface MoneyOwed {
     currency: string;
 }
 
+export interface GroupAdmin {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+    createdAt: string;
+}
+
 export interface GroupInfo {
     groupId: string;
     groupName: string;
     groupDescription: string;
-    groupAdmin: string;
+    groupAdmin: GroupAdmin;
     groupCreationDate: string;
     imageUrl: string | null;
 }
@@ -150,4 +158,32 @@ export const fetchExpenseDetails = async (expenseId: string): Promise<ExpenseDet
             'Content-Type': 'application/json',
         },
     });
+};
+
+export interface CreateGroupRequest {
+    createdBy: string; // UUID
+    groupName: string;
+    groupDescription?: string;
+}
+
+export const createGroup = async (data: CreateGroupRequest): Promise<{ success: boolean; data?: string; message?: string }> => {
+    try {
+        const response = await request(`/groups/create`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        return {
+            success: true,
+            data: response.data // Assuming response body is the UUID string
+        };
+    } catch (error: any) {
+        console.error("Error creating group:", error);
+        return {
+            success: false,
+            message: error.response?.data?.message || error.message || "Failed to create group"
+        };
+    }
 };

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { Text } from "@/components/ui/text";
-import { fetchGroupExpenses, GroupExpenseItem, GroupInfo } from '../util/apiService';
+import { fetchGroupExpenses, GroupExpenseItem, GroupInfo, fetchUserExpenses } from '../util/apiService';
 import { UserBalance } from '../util/groupMocks';
 import { Stack, useRouter } from 'expo-router';
 import { ArrowLeft, Users } from 'lucide-react-native';
@@ -98,23 +98,38 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
 
                         // Calculate totals
                         const totals: { [currency: string]: number } = {};
-                        response.data.forEach(expense => {
-                            const curr = expense.currency.currencyName;
-                            totals[curr] = (totals[curr] || 0) + expense.amount;
+                        response.data.forEach(item => {
+                            const currency = item.currency.currencyName;
+                            totals[currency] = (totals[currency] || 0) + item.amount;
                         });
                         setTotalExpenses(totals);
 
                         // Find Creator Name
-                        const adminId = info.groupAdmin;
-                        // Try to find the admin in the expenses list users
-                        const adminUser = response.data.find(e => e.paidBy.userId === adminId)?.paidBy;
-                        if (adminUser) {
-                            setCreatorName(adminUser.name);
+                        if (info.groupAdmin && info.groupAdmin.name) {
+                            setCreatorName(info.groupAdmin.name);
                         } else {
-                            // If not found in expenses, we might need a separate API call to get user details, 
-                            // but for now we'll stick to what we have or generic "Admin".
-                            // Or maybe the group info itself should eventually have this.
                             setCreatorName("Admin");
+                        }
+                    } else {
+                        if (currentUserId) {
+                            try {
+                                const userGroupsRes = await fetchUserExpenses(currentUserId);
+                                if (userGroupsRes.success && userGroupsRes.data) {
+                                    const foundGroup = userGroupsRes.data.userGroupResponses.find(
+                                        g => g.group.groupId === groupId
+                                    );
+                                    if (foundGroup) {
+                                        setGroupInfo(foundGroup.group);
+                                        if (foundGroup.group.groupAdmin && foundGroup.group.groupAdmin.name) {
+                                            setCreatorName(foundGroup.group.groupAdmin.name);
+                                        } else {
+                                            setCreatorName("Admin");
+                                        }
+                                    }
+                                }
+                            } catch (err) {
+                                console.error("Fallback fetch failed", err);
+                            }
                         }
                     }
                 }

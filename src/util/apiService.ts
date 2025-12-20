@@ -98,6 +98,7 @@ export interface GroupExpenseItem {
     };
     group: GroupInfo;
     currency: Currency;
+    splits?: SplitDetail[];
 }
 
 export interface GroupExpensesResponse {
@@ -108,6 +109,42 @@ export interface GroupExpensesResponse {
 
 export const fetchGroupExpenses = async (groupId: string): Promise<GroupExpensesResponse> => {
     return request(`/expenses/group?groupId=${groupId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+};
+
+export interface SplitUser {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+    createdAt: string;
+}
+
+export interface SplitDetail {
+    splitId: string;
+    userId: string;
+    user: SplitUser;
+    amountOwed: number;
+    expense: GroupExpenseItem;
+}
+
+export interface ExpenseDetailData {
+    expense: GroupExpenseItem;
+    splits: SplitDetail[];
+}
+
+export interface ExpenseDetailsResponse {
+    message: string;
+    success: boolean;
+    data: ExpenseDetailData;
+}
+
+export const fetchExpenseDetails = async (expenseId: string): Promise<ExpenseDetailsResponse> => {
+    return request(`/expenses/details?expenseId=${expenseId}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',

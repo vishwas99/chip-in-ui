@@ -108,14 +108,14 @@ const mapToIndividualUser = (expenseItem: IndividualExpense): IndividualUser => 
     };
 };
 
-const GroupItem = ({ group }: { group: Group }) => {
+const GroupItem = ({ group, currentUserId }: { group: Group, currentUserId?: string }) => {
     const balances = group.userBalances || [];
     const displayBalances = balances.slice(0, 2);
     const hasMore = balances.length > 2;
     const router = useRouter();
 
     return (
-        <TouchableOpacity onPress={() => router.push(`/group/${group.id}`)}>
+        <TouchableOpacity onPress={() => router.push({ pathname: "/group/[groupId]", params: { groupId: group.id, userBalances: JSON.stringify(group.userBalances), currentUserId } })}>
             <View className="flex flex-row items-center justify-between p-4 mb-2 rounded-lg" style={{ backgroundColor: '#212121' }}>
                 <View className="flex flex-row items-center gap-3 flex-1">
                     {group.avatarUrl ? (
@@ -371,7 +371,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
                     isGroupActive ? (
                         <View className="gap-2">
                             {groups.map((group) => (
-                                <GroupItem key={group.id} group={group} />
+                                <GroupItem key={group.id} group={group} currentUserId={userData?.userId || userId} />
                             ))}
                         </View>
                     ) : (

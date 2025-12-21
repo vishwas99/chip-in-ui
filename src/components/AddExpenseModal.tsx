@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { addExpense, AddExpenseRequest, fetchUserExpenses, fetchCurrencies, GroupInfo, Currency, fetchGroupMembers, GroupMember, SplitRequest } from '../util/apiService';
 import { useRouter } from 'expo-router';
 import { getAuthData } from '../util/authService';
@@ -234,199 +234,204 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isVisible, onClose, c
             visible={isVisible}
             onRequestClose={onClose}
         >
-            <View style={styles.centeredView}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={styles.centeredView}
+            >
                 <View style={styles.modalView}>
-                    <Text style={styles.modalText}>Add New Expense</Text>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <Text style={styles.modalText}>Add New Expense</Text>
 
-                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-                    {/* Group Dropdown */}
-                    <Text style={styles.label}>Group</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => {
-                            setIsGroupDropdownOpen(!isGroupDropdownOpen);
-                            setIsCurrencyDropdownOpen(false); // Close other
-                        }}
-                    >
-                        <Text style={styles.dropdownText}>
-                            {getSelectedGroupName()}
-                        </Text>
-                        {isGroupDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
-                    </TouchableOpacity>
-                    {isGroupDropdownOpen && (
-                        <View style={styles.dropdownList}>
-                            <ScrollView style={{ maxHeight: 150 }}>
-                                {groups.map(group => (
-                                    <TouchableOpacity
-                                        key={group.groupId}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedGroupId(group.groupId);
-                                            setIsGroupDropdownOpen(false);
-                                        }}
-                                    >
-                                        <Text style={styles.dropdownItemText}>{group.groupName}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                                {groups.length === 0 && <Text style={styles.emptyText}>No groups found</Text>}
-                            </ScrollView>
-                        </View>
-                    )}
-
-
-                    <Text style={styles.label}>Expense Name</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter expense name"
-                        placeholderTextColor="#9ca3af"
-                        value={name}
-                        onChangeText={setName}
-                    />
-
-                    <Text style={styles.label}>Description</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter description"
-                        placeholderTextColor="#9ca3af"
-                        value={description}
-                        onChangeText={setDescription}
-                    />
-
-                    <Text style={styles.label}>Amount</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="0.00"
-                        placeholderTextColor="#9ca3af"
-                        keyboardType="numeric"
-                        value={amount}
-                        onChangeText={setAmount}
-                    />
-
-                    {/* Currency Dropdown */}
-                    <Text style={styles.label}>Currency</Text>
-                    <TouchableOpacity
-                        style={styles.dropdown}
-                        onPress={() => {
-                            setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen);
-                            setIsGroupDropdownOpen(false); // Close other
-                        }}
-                    >
-                        <Text style={styles.dropdownText}>
-                            {getSelectedCurrencyName()}
-                        </Text>
-                        {isCurrencyDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
-                    </TouchableOpacity>
-                    {isCurrencyDropdownOpen && (
-                        <View style={styles.dropdownList}>
-                            <ScrollView style={{ maxHeight: 150 }}>
-                                {currencies.map(curr => {
-                                    // Custom indicator logic: if exchangeTo is not null, it's custom
-                                    const isCustom = curr.exchangeTo !== null && curr.exchangeTo !== undefined;
-                                    return (
+                        {/* Group Dropdown */}
+                        <Text style={styles.label}>Group</Text>
+                        <TouchableOpacity
+                            style={styles.dropdown}
+                            onPress={() => {
+                                setIsGroupDropdownOpen(!isGroupDropdownOpen);
+                                setIsCurrencyDropdownOpen(false); // Close other
+                            }}
+                        >
+                            <Text style={styles.dropdownText}>
+                                {getSelectedGroupName()}
+                            </Text>
+                            {isGroupDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
+                        </TouchableOpacity>
+                        {isGroupDropdownOpen && (
+                            <View style={styles.dropdownList}>
+                                <ScrollView style={{ maxHeight: 150 }}>
+                                    {groups.map(group => (
                                         <TouchableOpacity
-                                            key={curr.id}
+                                            key={group.groupId}
                                             style={styles.dropdownItem}
                                             onPress={() => {
-                                                setSelectedCurrencyId(curr.id);
-                                                setIsCurrencyDropdownOpen(false);
+                                                setSelectedGroupId(group.groupId);
+                                                setIsGroupDropdownOpen(false);
                                             }}
                                         >
-                                            <Text style={styles.dropdownItemText}>
-                                                {curr.currencyName} {isCustom ? "(Custom)" : ""}
-                                            </Text>
+                                            <Text style={styles.dropdownItemText}>{group.groupName}</Text>
                                         </TouchableOpacity>
-                                    );
-                                })}
-                                {currencies.length === 0 && <Text style={styles.emptyText}>No currencies found</Text>}
-                            </ScrollView>
-                        </View>
-                    )}
-
-                    {/* Split Section */}
-                    {groupMembers.length > 0 && (
-                        <View style={styles.splitSection}>
-                            <Text style={styles.sectionHeader}>Split Expense</Text>
-
-                            {/* Toggle Mode */}
-                            <View style={styles.splitToggleContainer}>
-                                <TouchableOpacity
-                                    style={[styles.splitToggleButton, splitMode === 'EQUAL' && styles.splitToggleButtonActive]}
-                                    onPress={() => setSplitMode('EQUAL')}
-                                >
-                                    <Text style={[styles.splitToggleText, splitMode === 'EQUAL' && styles.splitToggleTextActive]}>Equally</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.splitToggleButton, splitMode === 'CUSTOM' && styles.splitToggleButtonActive]}
-                                    onPress={() => setSplitMode('CUSTOM')}
-                                >
-                                    <Text style={[styles.splitToggleText, splitMode === 'CUSTOM' && styles.splitToggleTextActive]}>Unequally</Text>
-                                </TouchableOpacity>
+                                    ))}
+                                    {groups.length === 0 && <Text style={styles.emptyText}>No groups found</Text>}
+                                </ScrollView>
                             </View>
+                        )}
 
-                            {/* Members List */}
-                            <ScrollView style={styles.membersList}>
-                                {groupMembers.map(member => {
-                                    const isSelected = selectedMemberIds.includes(member.userId);
-                                    const equalAmount = (amount && !isNaN(Number(amount)) && selectedMemberIds.length > 0)
-                                        ? (Number(amount) / selectedMemberIds.length).toFixed(2)
-                                        : '0.00';
 
-                                    return (
-                                        <View key={member.userId} style={styles.memberRow}>
-                                            <View style={styles.memberInfo}>
-                                                {splitMode === 'EQUAL' && (
-                                                    <TouchableOpacity onPress={() => toggleMemberSelection(member.userId)}>
-                                                        {isSelected ? <CheckSquare size={20} color="#33f584" /> : <Square size={20} color="#9ca3af" />}
-                                                    </TouchableOpacity>
-                                                )}
-                                                <Text style={styles.memberName}>{member.name}</Text>
-                                            </View>
+                        <Text style={styles.label}>Expense Name</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter expense name"
+                            placeholderTextColor="#9ca3af"
+                            value={name}
+                            onChangeText={setName}
+                        />
 
-                                            {splitMode === 'EQUAL' ? (
-                                                <Text style={styles.memberAmount}>
-                                                    {isSelected ? equalAmount : '0.00'}
+                        <Text style={styles.label}>Description</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter description"
+                            placeholderTextColor="#9ca3af"
+                            value={description}
+                            onChangeText={setDescription}
+                        />
+
+                        <Text style={styles.label}>Amount</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="0.00"
+                            placeholderTextColor="#9ca3af"
+                            keyboardType="numeric"
+                            value={amount}
+                            onChangeText={setAmount}
+                        />
+
+                        {/* Currency Dropdown */}
+                        <Text style={styles.label}>Currency</Text>
+                        <TouchableOpacity
+                            style={styles.dropdown}
+                            onPress={() => {
+                                setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen);
+                                setIsGroupDropdownOpen(false); // Close other
+                            }}
+                        >
+                            <Text style={styles.dropdownText}>
+                                {getSelectedCurrencyName()}
+                            </Text>
+                            {isCurrencyDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
+                        </TouchableOpacity>
+                        {isCurrencyDropdownOpen && (
+                            <View style={styles.dropdownList}>
+                                <ScrollView style={{ maxHeight: 150 }}>
+                                    {currencies.map(curr => {
+                                        // Custom indicator logic: if exchangeTo is not null, it's custom
+                                        const isCustom = curr.exchangeTo !== null && curr.exchangeTo !== undefined;
+                                        return (
+                                            <TouchableOpacity
+                                                key={curr.id}
+                                                style={styles.dropdownItem}
+                                                onPress={() => {
+                                                    setSelectedCurrencyId(curr.id);
+                                                    setIsCurrencyDropdownOpen(false);
+                                                }}
+                                            >
+                                                <Text style={styles.dropdownItemText}>
+                                                    {curr.currencyName} {isCustom ? "(Custom)" : ""}
                                                 </Text>
-                                            ) : (
-                                                <TextInput
-                                                    style={styles.amountInput}
-                                                    placeholder="0.00"
-                                                    placeholderTextColor="#6b7280"
-                                                    keyboardType="numeric"
-                                                    value={customSplitAmounts[member.userId] || ''}
-                                                    onChangeText={(val) => setCustomSplitAmounts(prev => ({ ...prev, [member.userId]: val }))}
-                                                />
-                                            )}
-                                        </View>
-                                    );
-                                })}
-                            </ScrollView>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                    {currencies.length === 0 && <Text style={styles.emptyText}>No currencies found</Text>}
+                                </ScrollView>
+                            </View>
+                        )}
+
+                        {/* Split Section */}
+                        {groupMembers.length > 0 && (
+                            <View style={styles.splitSection}>
+                                <Text style={styles.sectionHeader}>Split Expense</Text>
+
+                                {/* Toggle Mode */}
+                                <View style={styles.splitToggleContainer}>
+                                    <TouchableOpacity
+                                        style={[styles.splitToggleButton, splitMode === 'EQUAL' && styles.splitToggleButtonActive]}
+                                        onPress={() => setSplitMode('EQUAL')}
+                                    >
+                                        <Text style={[styles.splitToggleText, splitMode === 'EQUAL' && styles.splitToggleTextActive]}>Equally</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.splitToggleButton, splitMode === 'CUSTOM' && styles.splitToggleButtonActive]}
+                                        onPress={() => setSplitMode('CUSTOM')}
+                                    >
+                                        <Text style={[styles.splitToggleText, splitMode === 'CUSTOM' && styles.splitToggleTextActive]}>Unequally</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Members List */}
+                                <ScrollView style={styles.membersList} nestedScrollEnabled={true}>
+                                    {groupMembers.map(member => {
+                                        const isSelected = selectedMemberIds.includes(member.userId);
+                                        const equalAmount = (amount && !isNaN(Number(amount)) && selectedMemberIds.length > 0)
+                                            ? (Number(amount) / selectedMemberIds.length).toFixed(2)
+                                            : '0.00';
+
+                                        return (
+                                            <View key={member.userId} style={styles.memberRow}>
+                                                <View style={styles.memberInfo}>
+                                                    {splitMode === 'EQUAL' && (
+                                                        <TouchableOpacity onPress={() => toggleMemberSelection(member.userId)}>
+                                                            {isSelected ? <CheckSquare size={20} color="#33f584" /> : <Square size={20} color="#9ca3af" />}
+                                                        </TouchableOpacity>
+                                                    )}
+                                                    <Text style={styles.memberName}>{member.name}</Text>
+                                                </View>
+
+                                                {splitMode === 'EQUAL' ? (
+                                                    <Text style={styles.memberAmount}>
+                                                        {isSelected ? equalAmount : '0.00'}
+                                                    </Text>
+                                                ) : (
+                                                    <TextInput
+                                                        style={styles.amountInput}
+                                                        placeholder="0.00"
+                                                        placeholderTextColor="#6b7280"
+                                                        keyboardType="numeric"
+                                                        value={customSplitAmounts[member.userId] || ''}
+                                                        onChangeText={(val) => setCustomSplitAmounts(prev => ({ ...prev, [member.userId]: val }))}
+                                                    />
+                                                )}
+                                            </View>
+                                        );
+                                    })}
+                                </ScrollView>
+                            </View>
+                        )}
+
+
+                        <View style={styles.buttonContainer}>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonClose]}
+                                onPress={onClose}
+                                disabled={loading}
+                            >
+                                <Text style={styles.textStyle}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonCreate]}
+                                onPress={handleCreate}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator size="small" color="white" />
+                                ) : (
+                                    <Text style={styles.textStyle}>Add</Text>
+                                )}
+                            </TouchableOpacity>
                         </View>
-                    )}
-
-
-                    <View style={styles.buttonContainer}>
-                        <TouchableOpacity
-                            style={[styles.button, styles.buttonClose]}
-                            onPress={onClose}
-                            disabled={loading}
-                        >
-                            <Text style={styles.textStyle}>Cancel</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.button, styles.buttonCreate]}
-                            onPress={handleCreate}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator size="small" color="white" />
-                            ) : (
-                                <Text style={styles.textStyle}>Add</Text>
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                    </ScrollView>
                 </View>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 };

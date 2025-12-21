@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { createGroup } from '../util/apiService';
 import { useRouter } from 'expo-router';
 import { getAuthData } from '../util/authService';
@@ -74,52 +74,57 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isVisible, onClose,
             visible={isVisible}
             onRequestClose={onClose}
         >
-            <View style={styles.centeredView}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={styles.centeredView}
+            >
                 <View style={styles.modalView}>
-                    <Text style={styles.modalText}>Create New Group</Text>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <Text style={styles.modalText}>Create New Group</Text>
 
-                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-                    <Text style={styles.label}>Group Name</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter group name"
-                        placeholderTextColor="#9ca3af"
-                        value={groupName}
-                        onChangeText={setGroupName}
-                    />
+                        <Text style={styles.label}>Group Name</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter group name"
+                            placeholderTextColor="#9ca3af"
+                            value={groupName}
+                            onChangeText={setGroupName}
+                        />
 
-                    <Text style={styles.label}>Description</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter description (optional)"
-                        placeholderTextColor="#9ca3af"
-                        value={groupDescription}
-                        onChangeText={setGroupDescription}
-                    />
+                        <Text style={styles.label}>Description</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter description (optional)"
+                            placeholderTextColor="#9ca3af"
+                            value={groupDescription}
+                            onChangeText={setGroupDescription}
+                        />
 
-                    <View style={styles.buttonContainer}>
-                        <TouchableOpacity
-                            style={[styles.button, styles.buttonClose]}
-                            onPress={onClose}
-                            disabled={loading}
-                        >
-                            <Text style={styles.textStyle}>Cancel</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.button, styles.buttonCreate]}
-                            onPress={handleCreate}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator size="small" color="white" />
-                            ) : (
-                                <Text style={styles.textStyle}>Create</Text>
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                        <View style={styles.buttonContainer}>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonClose]}
+                                onPress={onClose}
+                                disabled={loading}
+                            >
+                                <Text style={styles.textStyle}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonCreate]}
+                                onPress={handleCreate}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator size="small" color="white" />
+                                ) : (
+                                    <Text style={styles.textStyle}>Create</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </ScrollView>
                 </View>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 };

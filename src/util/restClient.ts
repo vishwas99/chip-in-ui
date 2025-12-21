@@ -1,5 +1,7 @@
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "";
-const LOGIN_CONTEXT = process.env.EXPO_PUBLIC_LOGIN_CONTEXT || "/login";
+import Config from "../config";
+
+const API_BASE_URL = Config.API_BASE_URL;
+const LOGIN_CONTEXT = Config.LOGIN_CONTEXT;
 
 console.log("Final API URL:", `${API_BASE_URL}${LOGIN_CONTEXT}`);
 

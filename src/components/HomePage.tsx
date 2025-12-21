@@ -23,14 +23,15 @@ import axios from 'axios';
 import { Group, UserBalance } from '../util/groupMocks';
 import { IndividualUser } from '../util/individualMocks';
 import { fetchUserExpenses, UserExpenseData, UserGroupResponse, fetchUserIndividualExpenses, IndividualExpense, MoneyOwed } from '../util/apiService';
+import Config from "../config";
 import { getAuthData } from '../util/authService';
 
 const windowWidth = Dimensions.get('window').width;
 const windowHeight = Dimensions.get('window').height;
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "";
-const GROUP_CONTEXT = process.env.EXPO_PUBLIC_GROUP_CONTEXT || "/groups";
-const GROUP_FOR_USER_CONTEXT = process.env.EXPO_PUBLIC_GROUP_FOR_USER_CONTEXT || "/user";
+const API_BASE_URL = Config.API_BASE_URL;
+const GROUP_CONTEXT = Config.GROUP_CONTEXT;
+const GROUP_FOR_USER_CONTEXT = Config.GROUP_FOR_USER_CONTEXT;
 
 // Card Background - #212121
 // Curreny green - #33f584

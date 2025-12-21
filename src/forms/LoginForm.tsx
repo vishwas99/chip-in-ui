@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Button, StyleSheet } from "react-native";
+import { View, Button, StyleSheet, ActivityIndicator } from "react-native";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -12,8 +13,10 @@ import { useRouter } from 'expo-router';
 import * as AuthService from "../util/authService";
 // ...
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || "";
-const LOGIN_CONTEXT = process.env.EXPO_PUBLIC_LOGIN_CONTEXT || "/auth/login";
+import Config from "../config";
+
+const API_BASE_URL = Config.API_BASE_URL;
+const LOGIN_CONTEXT = Config.LOGIN_CONTEXT;
 
 // Validation Schema
 const loginSchema = z.object({
@@ -27,15 +30,17 @@ const LoginForm = () => {
   });
 
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
   const onLogin = async (data: any) => {
+    setLoading(true);
     try {
       console.log("API URL:", API_BASE_URL + LOGIN_CONTEXT);
 
       const response = await axios.post(API_BASE_URL + LOGIN_CONTEXT, data);
 
       if (response.status === 200 || response.status === 201) {
-        const { userId, sessionId } = response.data;
+        const { userId, sessionId } = response.data as any;
 
         if (AuthService && AuthService.saveAuthData) {
           await AuthService.saveAuthData(userId, sessionId);
@@ -47,6 +52,8 @@ const LoginForm = () => {
 
     } catch (error) {
       console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,7 +61,11 @@ const LoginForm = () => {
     <View style={styles.formContainer}>
       <InputField name="email" placeholder="Email" control={control} error={errors.email?.message} />
       <InputField name="password" placeholder="Password" control={control} error={errors.password?.message} secureTextEntry />
-      <Button title="Login" onPress={handleSubmit(onLogin)} />
+      {loading ? (
+        <ActivityIndicator size="large" color="#33f584" />
+      ) : (
+        <Button title="Login" onPress={handleSubmit(onLogin)} />
+      )}
     </View>
   );
 };

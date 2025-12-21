@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { Text } from "@/components/ui/text";
-import { fetchGroupExpenses, GroupExpenseItem, GroupInfo, fetchUserExpenses } from '../util/apiService';
+import { fetchGroupExpenses, GroupExpenseItem, GroupInfo, fetchUserExpenses, addGroupMember, fetchGroupMembers, GroupMember } from '../util/apiService';
 import { UserBalance } from '../util/groupMocks';
 import { Stack, useRouter } from 'expo-router';
-import { ArrowLeft, Users } from 'lucide-react-native';
+import { ArrowLeft, Users, UserPlus } from 'lucide-react-native';
+import AddUserModal from './AddUserModal';
 
 interface GroupDetailsPageProps {
 
@@ -81,6 +82,11 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
     const [groupInfo, setGroupInfo] = useState<GroupInfo | null>(null);
     const [totalExpenses, setTotalExpenses] = useState<{ [currency: string]: number }>({});
     const [creatorName, setCreatorName] = useState<string>('Unknown');
+
+    const [isAddUserModalVisible, setIsAddUserModalVisible] = useState(false);
+    const [activeTab, setActiveTab] = useState<'expenses' | 'members'>('expenses');
+    const [members, setMembers] = useState<GroupMember[]>([]);
+    const [membersLoading, setMembersLoading] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -142,6 +148,26 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
         loadData();
     }, [groupId]);
 
+    useEffect(() => {
+        if (activeTab === 'members' && groupId) {
+            loadMembers();
+        }
+    }, [activeTab, groupId]);
+
+    const loadMembers = async () => {
+        setMembersLoading(true);
+        try {
+            const response = await fetchGroupMembers(groupId);
+            if (response.success && response.data) {
+                setMembers(response.data);
+            }
+        } catch (error) {
+            console.error("Failed to load members", error);
+        } finally {
+            setMembersLoading(false);
+        }
+    };
+
     return (
         <View style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
@@ -150,6 +176,10 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
             <View>
                 <TouchableOpacity onPress={() => router.back()} style={{ position: 'absolute', top: 20, left: 20, zIndex: 10 }}>
                     <ArrowLeft color="white" size={28} />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => setIsAddUserModalVisible(true)} style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 }}>
+                    <UserPlus color="white" size={28} />
                 </TouchableOpacity>
 
                 <View className="items-center p-6 pt-12 pb-8 gap-4" style={{ backgroundColor: '#1a1a1a' }}>
@@ -220,22 +250,91 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
                 </View>
             </View>
 
+            {/* Tabs */}
+            <View className="flex-row border-b border-gray-800">
+                <TouchableOpacity
+                    onPress={() => setActiveTab('expenses')}
+                    className={`flex-1 py-4 items-center ${activeTab === 'expenses' ? 'border-b-2 border-green-400' : ''}`}
+                >
+                    <Text className={`font-bold ${activeTab === 'expenses' ? 'text-white' : 'text-gray-500'}`}>EXPENSES</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={() => setActiveTab('members')}
+                    className={`flex-1 py-4 items-center ${activeTab === 'members' ? 'border-b-2 border-green-400' : ''}`}
+                >
+                    <Text className={`font-bold ${activeTab === 'members' ? 'text-white' : 'text-gray-500'}`}>MEMBERS</Text>
+                </TouchableOpacity>
+            </View>
+
             <ScrollView style={{ flex: 1 }}>
-                {loading ? (
-                    <ActivityIndicator size="large" color="#33f584" className="mt-10" />
+                {activeTab === 'expenses' ? (
+                    loading ? (
+                        <ActivityIndicator size="large" color="#33f584" className="mt-10" />
+                    ) : (
+                        <View className="p-4 gap-3">
+                            <Text className="text-white text-lg font-bold mb-2">Recent Activity</Text>
+                            {expenses.length === 0 ? (
+                                <Text className="text-gray-500 text-center mt-4">No expenses found for this group.</Text>
+                            ) : (
+                                expenses.map((expense) => (
+                                    <ExpenseItem key={expense.expenseId} expense={expense} currentUserId={currentUserId} />
+                                ))
+                            )}
+                        </View>
+                    )
                 ) : (
-                    <View className="p-4 gap-3">
-                        <Text className="text-white text-lg font-bold mb-2">Recent Activity</Text>
-                        {expenses.length === 0 ? (
-                            <Text className="text-gray-500 text-center mt-4">No expenses found for this group.</Text>
-                        ) : (
-                            expenses.map((expense) => (
-                                <ExpenseItem key={expense.expenseId} expense={expense} currentUserId={currentUserId} />
-                            ))
-                        )}
-                    </View>
+                    membersLoading ? (
+                        <ActivityIndicator size="large" color="#33f584" className="mt-10" />
+                    ) : (
+                        <View className="p-4 gap-3">
+                            {members.map((member) => (
+                                <View key={member.userId} className="flex-row items-center justify-between bg-zinc-900 p-4 rounded-lg mb-2">
+                                    <View className="flex-row items-center gap-3">
+                                        <View className="w-10 h-10 rounded-full bg-gray-700 items-center justify-center">
+                                            <Text className="text-white font-bold">{member.name.charAt(0)}</Text>
+                                        </View>
+                                        <View>
+                                            <Text className="text-white font-bold text-lg">{member.name}</Text>
+                                            <Text className="text-gray-400 text-sm">{member.email}</Text>
+                                        </View>
+                                    </View>
+                                    {member.phone && <Text className="text-gray-500 text-xs">{member.phone}</Text>}
+                                </View>
+                            ))}
+                            {members.length === 0 && (
+                                <Text className="text-gray-500 text-center mt-4">No members found.</Text>
+                            )}
+                        </View>
+                    )
                 )}
             </ScrollView>
+            <AddUserModal
+                visible={isAddUserModalVisible}
+                onClose={() => setIsAddUserModalVisible(false)}
+                currentUserId={currentUserId}
+                groupId={groupId}
+                onAddUser={async (user) => {
+                    if (!groupId || !user.userId) return;
+                    console.log("Adding user:", user.userId, "to group:", groupId);
+                    // Call API to add user to group
+                    const result = await addGroupMember({ groupId, userId: user.userId });
+                    if (result.success) {
+                        console.log("User added successfully");
+                        // Refresh group data? For now just close the modal.
+                        // We might want to reload expenses or members if we were showing members list.
+                        if (activeTab === 'members') {
+                            loadMembers();
+                        }
+                        // Since we aren't showing members list explicitly except in expenses, no immediate UI update needed except maybe a toast.
+                        alert(`Added ${user.name} to the group!`);
+                    } else {
+                        console.error("Failed to add user:", result.message);
+                        alert(`Failed to add user: ${result.message}`);
+                    }
+
+                    setIsAddUserModalVisible(false);
+                }}
+            />
         </View>
     );
 };

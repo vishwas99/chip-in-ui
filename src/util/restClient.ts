@@ -11,11 +11,19 @@ export const request = async (url: string, options: RequestInit) => {
     const response = await fetch(`${API_BASE_URL}${url}`, options);
     console.log("Response status:", response.status);
 
-    const data = await response.json();
-    console.log("Response Data:", data);
+    const text = await response.text();
+    console.log("Response Text:", text);
+
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.warn("Response was not JSON, returning text:", e);
+      data = text;
+    }
 
     if (!response.ok) {
-      throw new Error(data.message || "Something went wrong");
+      throw new Error((data && data.message) || "Something went wrong");
     }
 
     return data;

@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Users, Receipt } from 'lucide-react-native';
 import CreateGroupModal from './CreateGroupModal';
+import AddExpenseModal from './AddExpenseModal';
 import { usePathname, useGlobalSearchParams } from 'expo-router';
 
 const GlobalFab = () => {
     const [isCreateGroupModalVisible, setIsCreateGroupModalVisible] = useState(false);
+    const [isAddExpenseModalVisible, setIsAddExpenseModalVisible] = useState(false);
     const pathname = usePathname();
     const params = useGlobalSearchParams();
 
@@ -14,7 +16,7 @@ const GlobalFab = () => {
         return null;
     }
 
-    const userIdParam = params.userId;
+    const userIdParam = params.userId || params.currentUserId;
     const currentUserId = Array.isArray(userIdParam) ? userIdParam[0] : userIdParam;
 
     return (
@@ -31,7 +33,7 @@ const GlobalFab = () => {
                 {/* Right Part - Add Expense */}
                 <TouchableOpacity
                     style={styles.fabButton}
-                    onPress={() => console.log("Add Expense Pressed")}
+                    onPress={() => setIsAddExpenseModalVisible(true)}
                 >
                     <Receipt color="black" size={20} />
                 </TouchableOpacity>
@@ -40,6 +42,12 @@ const GlobalFab = () => {
             <CreateGroupModal
                 isVisible={isCreateGroupModalVisible}
                 onClose={() => setIsCreateGroupModalVisible(false)}
+                currentUserId={currentUserId}
+            />
+
+            <AddExpenseModal
+                isVisible={isAddExpenseModalVisible}
+                onClose={() => setIsAddExpenseModalVisible(false)}
                 currentUserId={currentUserId}
             />
         </>

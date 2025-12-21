@@ -140,7 +140,7 @@ export default function ExpenseDetailsPage() {
                                     </View>
                                     <View>
                                         <Text className="text-white font-medium">
-                                            {split.userId === currentUserId ? 'You' : split.user.name}
+                                            {split.userId === currentUserId ? 'You' : (split.user?.name || 'Unknown')}
                                         </Text>
                                         {split.userId === expense.paidBy.userId && (
                                             <Text className="text-xs text-green-400">paid {expense.currency.currencyName} {expense.amount.toFixed(2)}</Text>

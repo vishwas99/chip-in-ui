@@ -22,9 +22,10 @@ export interface GroupInfo {
     imageUrl: string | null;
 }
 
+
 export interface UserGroupResponse {
     group: GroupInfo;
-    groupExpense: MoneyOwed[];
+    groupExpense: MoneyOwed[] | null;
 }
 
 export interface UserExpenseData {
@@ -55,6 +56,21 @@ export interface Currency {
     exchangeTo?: Currency | null;
     createdOn?: string;
 }
+
+export interface CurrencyResponse {
+    message: string;
+    success: boolean;
+    data: Currency[];
+}
+
+export const fetchCurrencies = async (userId: string): Promise<CurrencyResponse> => {
+    return request(`/currency/all?userId=${userId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    });
+};
 
 export interface IndividualMoneyOwed {
     moneyOwed: number;
@@ -92,6 +108,23 @@ export const fetchUserIndividualExpenses = async (userId: string): Promise<UserI
         },
     });
 };
+
+export interface SplitUser {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+    createdAt: string;
+}
+
+export interface SplitDetail {
+    splitId: string;
+    userId: string;
+    user: SplitUser;
+    amountOwed: number;
+    expense: GroupExpenseItem;
+}
+
 export interface GroupExpenseItem {
     expenseId: string;
     name: string;
@@ -103,6 +136,7 @@ export interface GroupExpenseItem {
         name: string;
         email: string;
         phone: string;
+        createdAt: string;
     };
     group: GroupInfo;
     currency: Currency;
@@ -124,7 +158,7 @@ export const fetchGroupExpenses = async (groupId: string): Promise<GroupExpenses
     });
 };
 
-export interface SplitUser {
+export interface GroupMember {
     userId: string;
     name: string;
     email: string;
@@ -132,13 +166,20 @@ export interface SplitUser {
     createdAt: string;
 }
 
-export interface SplitDetail {
-    splitId: string;
-    userId: string;
-    user: SplitUser;
-    amountOwed: number;
-    expense: GroupExpenseItem;
+export interface GroupMembersResponse {
+    message: string;
+    success: boolean;
+    data: GroupMember[];
 }
+
+export const fetchGroupMembers = async (groupId: string): Promise<GroupMembersResponse> => {
+    return request(`/groups/getGroupMembers?groupId=${groupId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+};
 
 export interface ExpenseDetailData {
     expense: GroupExpenseItem;
@@ -184,6 +225,109 @@ export const createGroup = async (data: CreateGroupRequest): Promise<{ success: 
         return {
             success: false,
             message: error.response?.data?.message || error.message || "Failed to create group"
+        };
+    }
+};
+
+export interface SplitRequest {
+    userId: string;
+    amount: number;
+}
+
+export interface AddExpenseRequest {
+    groupId: string;
+    expenseOwner: string;
+    amount: number;
+    description: string;
+    expenseName: string;
+    expenseSplit: SplitRequest[];
+    currencyId: string;
+}
+
+export const addExpense = async (data: AddExpenseRequest): Promise<{ success: boolean; data?: boolean; message?: string }> => {
+    try {
+        const response = await request(`/groups/addExpense`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        return {
+            success: true,
+            data: response?.data !== undefined ? response.data : response // Boolean true/false or object wrapper
+        };
+    } catch (error: any) {
+        console.error("Error adding expense:", error);
+        return {
+            success: false,
+            message: error.response?.data?.message || error.message || "Failed to add expense"
+        };
+    }
+};
+
+export interface KnownUser {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+    createdAt: string;
+}
+
+export interface KnownUsersResponse {
+    message: string;
+    success: boolean;
+    data: KnownUser[];
+}
+
+export const fetchNewKnownUsers = async (userId: string, groupId: string): Promise<KnownUsersResponse> => {
+    return request(`/users/get-new-known-users?userId=${userId}&groupId=${groupId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+};
+
+export interface ValidUserResponse {
+    message: string;
+    success: boolean;
+    data: KnownUser;
+}
+
+export const validateUserByEmail = async (email: string): Promise<ValidUserResponse> => {
+    return request(`/users/get-user-by-email?email=${email}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+};
+
+
+export interface AddMemberRequest {
+    groupId: string;
+    userId: string;
+}
+
+export const addGroupMember = async (data: AddMemberRequest): Promise<{ success: boolean; data?: boolean; message?: string }> => {
+    try {
+        const response = await request(`/groups/addMember`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        return {
+            success: true,
+            data: response.data // Assuming this is boolean
+        };
+    } catch (error: any) {
+        console.error("Error adding group member:", error);
+        return {
+            success: false,
+            message: error.response?.data?.message || error.message || "Failed to add member"
         };
     }
 };

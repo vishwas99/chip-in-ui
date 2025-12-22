@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import { Text } from "@/components/ui/text";
-import { fetchGroupExpenses, GroupExpenseItem, GroupInfo, fetchUserExpenses, addGroupMember, fetchGroupMembers, GroupMember } from '../util/apiService';
+import { fetchUserExpenses, addGroupMember, fetchGroupMembers, GroupMember, fetchSettledGroupExpenses, SettledExpenseItem } from '../util/apiService';
 import { UserBalance } from '../util/groupMocks';
 import { Stack, useRouter } from 'expo-router';
 import { ArrowLeft, Users, UserPlus } from 'lucide-react-native';
@@ -14,38 +14,47 @@ interface GroupDetailsPageProps {
     currentUserId?: string;
 }
 
-const ExpenseItem = ({ expense, currentUserId }: { expense: GroupExpenseItem, currentUserId?: string }) => {
+const ExpenseItem = ({ expense, currentUserId, members }: { expense: SettledExpenseItem, currentUserId?: string, members: GroupMember[] }) => {
     const router = useRouter();
 
     // Calculate owed/owing status
     let statusText = "";
     let statusColor = "#9ca3af"; // default gray
-    let displayAmount = 0;
+    let displayAmount = expense.amount;
+    let originalAmount = 0;
+
+    // Find who paid
+    const paidByMember = members.find(m => m.userId === expense.paidBy);
+    const paidByName = paidByMember ? paidByMember.name : "Unknown";
 
     if (currentUserId && expense.splits) {
         const userSplit = expense.splits.find(s => s.userId === currentUserId);
-        const userShare = userSplit ? Math.abs(userSplit.amountOwed) : 0;
 
-        if (expense.paidBy.userId === currentUserId) {
-            // User paid. They are owed: Total - Their Share
-            // Note: If user paid but isn't in splits, userShare is 0, so they are owed full amount.
-            displayAmount = expense.amount - userShare;
-            if (displayAmount > 0.01) {
+        if (userSplit) {
+            const effective = userSplit.effectiveAmount;
+            originalAmount = userSplit.originalAmount;
+
+            // Logic based on effective amount
+            // If effective amount is > 0, you are owed that amount (net positive)
+            // If effective amount is < 0, you owe that amount (net negative)
+            // If effective amount is 0, you are settled for this expense (or it balanced out)
+
+            if (effective > 0.01) {
                 statusText = "you are owed";
                 statusColor = "#33f584"; // green
-            } else {
-                statusText = "you paid";
-                statusColor = "#33f584";
-            }
-        } else {
-            // User didn't pay. They owe their share.
-            displayAmount = userShare;
-            if (displayAmount > 0.01) {
+                displayAmount = effective;
+            } else if (effective < -0.01) {
                 statusText = "you owe";
                 statusColor = "#f53344"; // red
+                displayAmount = Math.abs(effective);
             } else {
-                statusText = "not involved";
+                statusText = "settled";
+                statusColor = "#9ca3af";
+                displayAmount = 0; // Or keep it 0
             }
+
+        } else {
+            statusText = "not involved";
         }
     }
 
@@ -58,17 +67,27 @@ const ExpenseItem = ({ expense, currentUserId }: { expense: GroupExpenseItem, cu
             <View className="flex-1">
                 <Text className="text-white font-bold text-lg">{expense.name}</Text>
                 <Text className="text-gray-400 text-sm">{expense.description}</Text>
-                <Text className="text-gray-500 text-xs mt-1">{new Date(expense.date).toLocaleDateString()}</Text>
+                <Text className="text-gray-500 text-xs mt-1">{new Date().toLocaleDateString()} </Text>
             </View>
             <View className="items-end">
-                <Text className="text-white font-bold text-xl" style={{ color: '#f53344' }}>
-                    {expense.currency.currencyName} {expense.amount.toFixed(2)}
+                <Text className="text-white font-bold text-xl" style={{ color: statusColor === "#f53344" ? '#f53344' : (statusColor === "#33f584" ? '#33f584' : 'white') }}>
+                    {expense.currency.currencyName} {displayAmount.toFixed(2)}
                 </Text>
-                <Text className="text-gray-400 text-xs mb-1">Paid by: {expense.paidBy.name}</Text>
+                {originalAmount !== 0 && (
+                    <Text className="text-gray-500 text-xs">
+                        Original: {originalAmount.toFixed(2)}
+                    </Text>
+                )}
+                <Text className="text-gray-400 text-xs mb-1">Paid by: {paidByName}</Text>
 
-                {statusText !== "" && statusText !== "not involved" && (
+                {statusText !== "" && statusText !== "not involved" && statusText !== "settled" && (
                     <Text className="text-xs font-bold" style={{ color: statusColor }}>
-                        {statusText} {expense.currency.currencyName} {displayAmount.toFixed(2)}
+                        {statusText}
+                    </Text>
+                )}
+                {statusText === "settled" && (
+                    <Text className="text-xs font-bold text-gray-400">
+                        settled
                     </Text>
                 )}
             </View>
@@ -77,9 +96,9 @@ const ExpenseItem = ({ expense, currentUserId }: { expense: GroupExpenseItem, cu
 };
 
 const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalances, currentUserId }) => {
-    const [expenses, setExpenses] = useState<GroupExpenseItem[]>([]);
+    const [expenses, setExpenses] = useState<SettledExpenseItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [groupInfo, setGroupInfo] = useState<GroupInfo | null>(null);
+    const [groupInfo, setGroupInfo] = useState<any | null>(null); // Simplified GroupInfo for now as we don't get full obj from settled api
     const [totalExpenses, setTotalExpenses] = useState<{ [currency: string]: number }>({});
     const [creatorName, setCreatorName] = useState<string>('Unknown');
 
@@ -91,54 +110,54 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
 
     useEffect(() => {
         const loadData = async () => {
-            if (!groupId) return;
+            if (!groupId || !currentUserId) return;
             setLoading(true);
             try {
-                const response = await fetchGroupExpenses(groupId);
-                if (response.success && response.data) {
-                    setExpenses(response.data);
+                // Fetch members first to have names ready
+                const membersRes = await fetchGroupMembers(groupId);
+                let currentMembers: GroupMember[] = [];
+                if (membersRes.success && membersRes.data) {
+                    setMembers(membersRes.data);
+                    currentMembers = membersRes.data;
+                }
 
-                    if (response.data.length > 0) {
-                        const info = response.data[0].group;
-                        setGroupInfo(info);
+                const data = await fetchSettledGroupExpenses(groupId, currentUserId);
+                if (data) {
+                    setExpenses(data);
 
-                        // Calculate totals
-                        const totals: { [currency: string]: number } = {};
-                        response.data.forEach(item => {
-                            const currency = item.currency.currencyName;
-                            totals[currency] = (totals[currency] || 0) + item.amount;
-                        });
-                        setTotalExpenses(totals);
+                    // Fetch Group Info separately or try to derive it?
+                    // The old API returned group info inside the expense item. The new one doesn't seem to have it?
+                    // We can rely on fallback fetchUserExpenses to get group info if needed, or if the user passed it via props (not currently in props).
+                    // For now, let's keep the fallback mechanism to get Group Info.
 
-                        // Find Creator Name
-                        if (info.groupAdmin && info.groupAdmin.name) {
-                            setCreatorName(info.groupAdmin.name);
-                        } else {
-                            setCreatorName("Admin");
-                        }
-                    } else {
-                        if (currentUserId) {
-                            try {
-                                const userGroupsRes = await fetchUserExpenses(currentUserId);
-                                if (userGroupsRes.success && userGroupsRes.data) {
-                                    const foundGroup = userGroupsRes.data.userGroupResponses.find(
-                                        g => g.group.groupId === groupId
-                                    );
-                                    if (foundGroup) {
-                                        setGroupInfo(foundGroup.group);
-                                        if (foundGroup.group.groupAdmin && foundGroup.group.groupAdmin.name) {
-                                            setCreatorName(foundGroup.group.groupAdmin.name);
-                                        } else {
-                                            setCreatorName("Admin");
-                                        }
-                                    }
-                                }
-                            } catch (err) {
-                                console.error("Fallback fetch failed", err);
+                    // Calculate totals from fetched expenses
+                    const totals: { [currency: string]: number } = {};
+                    data.forEach(item => {
+                        const currency = item.currency.currencyName;
+                        totals[currency] = (totals[currency] || 0) + item.amount;
+                    });
+                    setTotalExpenses(totals);
+                }
+
+                // Fetch Group Info via UserExpenses (Fallback/Primary as Settled API doesn't return GroupInfo)
+                try {
+                    const userGroupsRes = await fetchUserExpenses(currentUserId);
+                    if (userGroupsRes.success && userGroupsRes.data) {
+                        const foundGroup = userGroupsRes.data.userGroupResponses.find(
+                            g => g.group.groupId === groupId
+                        );
+                        if (foundGroup) {
+                            setGroupInfo(foundGroup.group);
+                            if (foundGroup.group.groupAdmin) {
+                                // Creator name might be in groupAdmin object
+                                setCreatorName(foundGroup.group.groupAdmin.name || "Admin");
                             }
                         }
                     }
+                } catch (err) {
+                    console.error("Group Info fetch failed", err);
                 }
+
             } catch (error) {
                 console.error("Error fetching group expenses:", error);
             } finally {
@@ -146,7 +165,7 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
             }
         };
         loadData();
-    }, [groupId]);
+    }, [groupId, currentUserId]);
 
     useEffect(() => {
         if (activeTab === 'members' && groupId) {
@@ -277,7 +296,7 @@ const GroupDetailsPage: React.FC<GroupDetailsPageProps> = ({ groupId, userBalanc
                                 <Text className="text-gray-500 text-center mt-4">No expenses found for this group.</Text>
                             ) : (
                                 expenses.map((expense) => (
-                                    <ExpenseItem key={expense.expenseId} expense={expense} currentUserId={currentUserId} />
+                                    <ExpenseItem key={expense.expenseId} expense={expense} currentUserId={currentUserId} members={members} />
                                 ))
                             )}
                         </View>

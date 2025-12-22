@@ -201,6 +201,31 @@ export const fetchExpenseDetails = async (expenseId: string): Promise<ExpenseDet
     });
 };
 
+export interface SettledSplit {
+    userId: string;
+    originalAmount: number;
+    effectiveAmount: number;
+}
+
+export interface SettledExpenseItem {
+    expenseId: string;
+    name: string;
+    description: string;
+    amount: number;
+    currency: Currency;
+    paidBy: string; // userId string
+    splits: SettledSplit[];
+}
+
+export const fetchSettledGroupExpenses = async (groupId: string, userId: string): Promise<SettledExpenseItem[]> => {
+    return request(`/groups/${groupId}/expenses/settled?userId=${userId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+};
+
 export interface CreateGroupRequest {
     createdBy: string; // UUID
     groupName: string;

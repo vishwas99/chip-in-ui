@@ -1,4 +1,5 @@
 import Config from "../config";
+import { getAuthData } from "./authService";
 
 const API_BASE_URL = Config.API_BASE_URL;
 const LOGIN_CONTEXT = Config.LOGIN_CONTEXT;
@@ -6,11 +7,27 @@ const LOGIN_CONTEXT = Config.LOGIN_CONTEXT;
 console.log("Final API URL:", `${API_BASE_URL}${LOGIN_CONTEXT}`);
 
 // Generic request function
-export const request = async (url: string, options: RequestInit) => {
+export const request = async (url: string, options: RequestInit = {}) => {
   try {
     console.log("Making API call to:", `${API_BASE_URL}${url}`);
 
-    const response = await fetch(`${API_BASE_URL}${url}`, options);
+    const headers: HeadersInit = {
+      ...options.headers,
+    };
+
+    // Only attach Bearer token for authenticated /api/ routes.
+    // Never send auth headers for /auth/ endpoints (login, signup).
+    if (url.startsWith('/api/')) {
+        const { sessionId: token } = await getAuthData();
+        if (token) {
+            (headers as any)['Authorization'] = `Bearer ${token}`;
+        }
+    }
+
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers,
+    });
     console.log("Response status:", response.status);
 
     const text = await response.text();

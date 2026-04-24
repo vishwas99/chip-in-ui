@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Image, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
 import { ScrollView } from 'react-native';
@@ -22,9 +23,10 @@ import axios from 'axios';
 // import { Cookies } from '@react-native-cookies/cookies';
 import { Group, UserBalance } from '../util/groupMocks';
 import { IndividualUser } from '../util/individualMocks';
-import { fetchUserExpenses, UserExpenseData, UserGroupResponse, fetchUserIndividualExpenses, IndividualExpense, MoneyOwed } from '../util/apiService';
+import { fetchHomeGroups, fetchHomeFriends, fetchDefaultCurrency, HomeGroupsResponse, HomeFriendsResponse } from '../util/apiService';
 import Config from "../config";
-import { getAuthData } from '../util/authService';
+import AddExpenseModal from './AddExpenseModal';
+import CreateGroupModal from './CreateGroupModal';
 
 const windowWidth = Dimensions.get('window').width;
 const windowHeight = Dimensions.get('window').height;
@@ -33,14 +35,13 @@ const API_BASE_URL = Config.API_BASE_URL;
 const GROUP_CONTEXT = Config.GROUP_CONTEXT;
 const GROUP_FOR_USER_CONTEXT = Config.GROUP_FOR_USER_CONTEXT;
 
-// Card Background - #212121
-// Curreny green - #33f584
-// Currency red - #f53344
+// Card Background - #131B3A
+// Currency positive (Owed) - #10B981 (Emerald)
+// Currency negative (Owes) - #F43F5E (Rose)
 
 interface HomePageProps {
     onLogout?: () => void;
     username?: string;
-    userId?: string; // Added userId prop
 }
 
 const calculateIndividualSummary = (expenseList: IndividualExpense[]): MoneyOwed[] => {
@@ -117,7 +118,7 @@ const GroupItem = ({ group, currentUserId }: { group: Group, currentUserId?: str
 
     return (
         <TouchableOpacity onPress={() => router.push({ pathname: "/group/[groupId]", params: { groupId: group.id, userBalances: JSON.stringify(group.userBalances), currentUserId } })}>
-            <View className="flex flex-row items-center justify-between p-4 mb-2 rounded-lg" style={{ backgroundColor: '#212121' }}>
+            <View className="flex flex-row items-center justify-between p-4 mb-2 rounded-lg" style={{ backgroundColor: '#131B3A', borderColor: '#24335E', borderWidth: 1, shadowColor: '#000000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.2, shadowRadius: 5 }}>
                 <View className="flex flex-row items-center gap-3 flex-1">
                     {group.avatarUrl ? (
                         <Image
@@ -125,13 +126,13 @@ const GroupItem = ({ group, currentUserId }: { group: Group, currentUserId?: str
                             style={{ width: 40, height: 40, borderRadius: 20 }}
                         />
                     ) : (
-                        <View className="w-10 h-10 rounded-full bg-gray-600 items-center justify-center">
-                            <Users size={20} color="white" />
+                        <View className="w-10 h-10 rounded-full bg-[#8B5CF615] items-center justify-center border border-[#8B5CF640]">
+                            <Users size={20} color="#8B5CF6" />
                         </View>
                     )}
                     <View className="flex-1">
-                        <Text className="text-white font-bold text-lg">{group.name}</Text>
-                        <Text className="text-gray-400 text-sm" numberOfLines={1}>{group.description || `${group.memberCount || 0} members`}</Text>
+                        <Text className="text-[#E2E8F0] font-extrabold text-lg">{group.name}</Text>
+                        <Text className="text-[#829AC9] text-sm" numberOfLines={1}>{group.description || `${group.memberCount || 0} members`}</Text>
                     </View>
                 </View>
                 <View className="items-end max-w-[40%]">
@@ -139,7 +140,7 @@ const GroupItem = ({ group, currentUserId }: { group: Group, currentUserId?: str
                         {displayBalances.map((balance, index) => {
                             const isSettled = balance.status === 'SETTLED';
                             const isOwed = balance.status === 'OWED';
-                            const color = isSettled ? '#9ca3af' : (isOwed ? '#33f584' : '#f53344');
+                            const color = isSettled ? '#829AC9' : (isOwed ? '#10B981' : '#F43F5E');
 
                             return (
                                 <Text key={index} style={{ color, fontWeight: 'bold' }}>
@@ -164,7 +165,7 @@ const IndividualItem = ({ user }: { user: IndividualUser }) => {
     const hasMore = balances.length > 2;
 
     return (
-        <View className="flex flex-row items-center justify-between p-4 mb-2 rounded-lg" style={{ backgroundColor: '#212121' }}>
+        <View className="flex flex-row items-center justify-between p-4 mb-2 rounded-lg" style={{ backgroundColor: '#131B3A', borderColor: '#24335E', borderWidth: 1, shadowColor: '#000000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.2, shadowRadius: 5 }}>
             <View className="flex flex-row items-center gap-3 flex-1">
                 {user.avatarUrl ? (
                     <Image
@@ -172,13 +173,13 @@ const IndividualItem = ({ user }: { user: IndividualUser }) => {
                         style={{ width: 40, height: 40, borderRadius: 20 }}
                     />
                 ) : (
-                    <View className="w-10 h-10 rounded-full bg-gray-600 items-center justify-center">
-                        <User size={20} color="white" />
+                    <View className="w-10 h-10 rounded-full bg-[#8B5CF615] items-center justify-center border border-[#8B5CF640]">
+                        <User size={20} color="#8B5CF6" />
                     </View>
                 )}
                 <View className="flex-1">
-                    <Text className="text-white font-bold text-lg">{user.name}</Text>
-                    <Text className="text-gray-400 text-sm" numberOfLines={1}>{user.email || 'No email'}</Text>
+                    <Text className="text-[#E2E8F0] font-extrabold text-lg">{user.name}</Text>
+                    <Text className="text-[#829AC9] text-sm" numberOfLines={1}>{user.email || 'No email'}</Text>
                 </View>
             </View>
             <View className="items-end max-w-[40%]">
@@ -186,7 +187,7 @@ const IndividualItem = ({ user }: { user: IndividualUser }) => {
                     {displayBalances.map((balance, index) => {
                         const isSettled = balance.status === 'SETTLED';
                         const isOwed = balance.status === 'OWED';
-                        const color = isSettled ? '#9ca3af' : (isOwed ? '#33f584' : '#f53344');
+                        const color = isSettled ? '#829AC9' : (isOwed ? '#10B981' : '#F43F5E');
 
                         return (
                             <Text key={index} style={{ color, fontWeight: 'bold' }}>
@@ -204,63 +205,77 @@ const IndividualItem = ({ user }: { user: IndividualUser }) => {
 };
 
 
-const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
+const HomePage: React.FC<HomePageProps> = ({ onLogout, username }) => {
+    const insets = useSafeAreaInsets();
 
     const [isGroupActive, setIsGroupActive] = useState(true);
     const [groups, setGroups] = useState<Group[]>([]);
     const [individuals, setIndividuals] = useState<IndividualUser[]>([]);
-    const [individualSummary, setIndividualSummary] = useState<MoneyOwed[]>([]);
+    const [groupSummary, setGroupSummary] = useState<any>(null);
+    const [friendSummary, setFriendSummary] = useState<any>(null);
+    const [defaultCurrencyId, setDefaultCurrencyId] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(true);
-    const [userData, setUserData] = useState<UserExpenseData | null>(null);
+    const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
+    const [isCreateGroupVisible, setIsCreateGroupVisible] = useState(false);
 
     const fetchData = async (type: 'groups' | 'individual' | 'all' = 'all') => {
         setLoading(true);
         try {
-            const { userId: storedUserId } = await getAuthData();
-            const idToUse = storedUserId || userId;
-
-            if (!idToUse) {
-                console.warn("No userId found (prop or storage). Cannot fetch data.");
-                setLoading(false);
-                return;
+            // Default currency fetch is best-effort — server 500s if none set, that's OK
+            let currencyId = defaultCurrencyId;
+            if (!currencyId) {
+                try {
+                    const defaultCurrency = await fetchDefaultCurrency();
+                    currencyId = defaultCurrency.id;
+                    setDefaultCurrencyId(currencyId);
+                    console.log('[Home] Default currency ID:', currencyId);
+                } catch (e) {
+                    // Backend 500s when no default currency is set — proceed without it
+                }
             }
 
-            console.log("Fetching data for userId:", idToUse);
-
-            const promises = [];
-
             if (type === 'all' || type === 'groups') {
-                promises.push(fetchUserExpenses(idToUse).then(res => ({ type: 'groups', res })));
+                const res = await fetchHomeGroups(currencyId);
+                console.log("Home Groups Response:", JSON.stringify(res, null, 2));
+                setGroupSummary(res);
+                // Actual response field is 'groups' (not 'groupSummaries')
+                const mappedGroups = (res.groups || []).map((g: any): Group => ({
+                    id: g.groupId || g.group?.groupId,
+                    name: g.groupName || g.group?.name || g.group?.groupName,
+                    description: g.groupDescription || g.group?.description,
+                    avatarUrl: g.imageUrl || g.group?.imageUrl || null,
+                    createdAt: g.createdAt || g.group?.createdAt,
+                    userBalances: g.amountOwedByUser != null
+                        ? [{ amount: Math.abs(g.amountOwedByUser), currency: res.displayCurrencyCode || 'INR', status: g.amountOwedByUser > 0 ? 'OWES' : g.amountOwedByUser < 0 ? 'OWED' : 'SETTLED' }]
+                        : (g.balances || []).map((b: any) => ({
+                            amount: Math.abs(b.amount),
+                            currency: b.currencyCode || b.currency || 'INR',
+                            status: b.amount > 0 ? 'OWED' : b.amount < 0 ? 'OWES' : 'SETTLED',
+                        })),
+                }));
+                setGroups(mappedGroups);
             }
 
             if (type === 'all' || type === 'individual') {
-                promises.push(fetchUserIndividualExpenses(idToUse).then(res => ({ type: 'individual', res })));
+                const res = await fetchHomeFriends(currencyId);
+                console.log("Home Friends Response:", JSON.stringify(res, null, 2));
+                setFriendSummary(res);
+                // Actual response field is 'friends' (not 'friendSummaries')
+                const mappedFriends = (res.friends || []).map((f: any): IndividualUser => ({
+                    id: f.friendId || f.userId || f.email,
+                    name: f.friendName || f.name,
+                    email: f.email,
+                    avatarUrl: null,
+                    balances: f.netBalance != null
+                        ? [{ amount: Math.abs(f.netBalance), currency: res.displayCurrencyCode || 'INR', status: f.netBalance > 0 ? 'OWED' : f.netBalance < 0 ? 'OWES' : 'SETTLED' }]
+                        : (f.balances || []).map((b: any) => ({
+                            amount: Math.abs(b.amount),
+                            currency: b.currencyCode || b.currency || 'INR',
+                            status: b.amount > 0 ? 'OWED' : b.amount < 0 ? 'OWES' : 'SETTLED',
+                        })),
+                }));
+                setIndividuals(mappedFriends);
             }
-
-            const results = await Promise.all(promises);
-
-            results.forEach(({ type, res }: any) => {
-                if (type === 'groups') {
-                    if (res.success && res.data) {
-                        setUserData(res.data);
-                        const mappedGroups = res.data.userGroupResponses.map(mapToGroup);
-                        setGroups(mappedGroups);
-                    } else {
-                        console.error("Failed to fetch user expenses:", res.message);
-                        setGroups([]);
-                    }
-                } else if (type === 'individual') {
-                    if (res.success && res.data) {
-                        const mappedIndividuals = res.data.expenseList.map(mapToIndividualUser);
-                        setIndividuals(mappedIndividuals);
-                        setIndividualSummary(calculateIndividualSummary(res.data.expenseList));
-                    } else {
-                        console.error("Failed to fetch individual expenses:", res.message);
-                        setIndividuals([]);
-                        setIndividualSummary([]);
-                    }
-                }
-            });
 
         } catch (error) {
             console.error("Error loading data:", error);
@@ -291,55 +306,57 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
         }
     }
 
-    // Prepare summary data from API or fallbacks
-    const moneyOwedList = isGroupActive ? (userData?.moneyOwedList || []) : individualSummary;
-    const hasData = moneyOwedList.length > 0;
-
-    // Fallback if no data
-    const displayList = hasData ? moneyOwedList.slice(0, 3) : [{ moneyOwed: 0, currency: 'USD' }];
-    const remainingCount = Math.max(0, moneyOwedList.length - 3);
+    // Build the summary banner from real API totals
+    const activeSummary = isGroupActive ? groupSummary : friendSummary;
+    const currencyCode = activeSummary?.displayCurrencyCode || 'INR';
+    const owedToYou = activeSummary?.totalOwedToYou || 0;
+    const youOwe = activeSummary?.totalYouOwe || 0;
+    const displayList = owedToYou > 0 || youOwe > 0
+        ? [
+            ...(owedToYou > 0 ? [{ moneyOwed: owedToYou, currency: currencyCode }] : []),
+            ...(youOwe > 0  ? [{ moneyOwed: -youOwe,  currency: currencyCode }] : []),
+          ]
+        : [{ moneyOwed: 0, currency: currencyCode }];
+    const remainingCount = 0;
 
     return (
-        <View style={{ flex: 1, backgroundColor: 'black' }}>
+        <View style={{ flex: 1, backgroundColor: '#0B1128', paddingTop: insets.top }}>
             <ScrollView style={styles.container}>
                 {/* Search, Add group, Add Quick Expense buttons */}
                 <View className="flex flex-row justify-between items-center p-4 m-2 w-full">
-                    <Text className="text-lg text-white">Welcome, {username || 'User'}</Text>
-                    {/* Replaced top buttons with FAB implementation, keeping them hidden or removed if redundant. 
-                        User request implies specific bottom FAB. I will remove the top buttons to avoid clutter or keep them?
-                        The user didn't ask to remove top buttons, but they seem redundant now. I'll comment them out or leave them.
-                        I'll leave them for now to avoid accidental regression of unseen features, but the FAB is the main focus.
-                    */}
-                    <View className="flex flex-row space-x-4 gap-4">
-                        <Button size="md" variant="link" action="primary">
-                            <View>
-                                <HandCoins color="white" />
-                            </View>
-                        </Button>
-                        <Button size="md" variant="link" action="primary" >
-                            <View>
-                                <UserPlus color="white" />
-                            </View>
-                        </Button>
+                    <Text className="text-xl font-bold text-[#E2E8F0]">Welcome, {username || 'User'}</Text>
+                    <View className="flex flex-row gap-3">
+                        <TouchableOpacity
+                            onPress={() => setIsAddExpenseVisible(true)}
+                            style={{ backgroundColor: '#1C2854', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#24335E' }}
+                        >
+                            <HandCoins color="#8B5CF6" size={22} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setIsCreateGroupVisible(true)}
+                            style={{ backgroundColor: '#1C2854', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#24335E' }}
+                        >
+                            <UserPlus color="#8B5CF6" size={22} />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
                 {/* Summary Card */}
 
                 <View className='w-full'>
-                    <Card size="lg" variant="elevated" className="p-5 m-3 lg" style={{ backgroundColor: '#212121' }}>
+                    <Card size="lg" variant="elevated" className="p-5 m-3 lg" style={{ backgroundColor: '#131B3A', borderColor: '#24335E', borderWidth: 1, shadowColor: '#000000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 10 }}>
                         {loading ? (
-                            <ActivityIndicator size="small" color="#33f584" />
+                            <ActivityIndicator size="small" color="#8B5CF6" />
                         ) : (
                             <View className="gap-3">
                                 {displayList.map((item, index) => {
                                     const amount = item.moneyOwed;
                                     const text = amount > 0 ? "You are owed" : (amount < 0 ? "You owe" : "All settled");
-                                    const color = amount >= 0 ? '#33f584' : '#f53344';
+                                    const color = amount >= 0 ? '#10B981' : '#F43F5E';
 
                                     return (
                                         <View key={item.currency} className="flex flex-row justify-between items-center">
-                                            <Text size="xl" className='text-white'>{text}</Text>
+                                            <Text size="xl" className='text-[#E2E8F0] font-bold'>{text}</Text>
                                             <Text size="2xl" className="text-2xl" style={{ color }}>
                                                 {Math.abs(amount).toLocaleString('en-US', {
                                                     style: 'currency',
@@ -350,7 +367,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
                                     );
                                 })}
                                 {remainingCount > 0 && (
-                                    <Text className="text-gray-400 text-sm text-right mt-1">
+                                    <Text className="text-[#829AC9] text-sm text-right mt-1 font-semibold">
                                         And {remainingCount} more currency{remainingCount > 1 ? 'ies' : ''}...
                                     </Text>
                                 )}
@@ -358,27 +375,27 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
                         )}
                     </Card>
                 </View>
-                <Divider className="my-2 bg-gray-700" />
+                <Divider className="my-2" style={{ backgroundColor: '#24335E' }} />
 
                 {/* Groups / Individual Toggle */}
                 <View className='flex flex-row items-center p-4 m-2 gap-4 w-full'>
-                    <Button size="md" variant="outline" action="primary" onPress={() => loadData('groups')} style={{ borderColor: isGroupActive ? '#33f584' : 'gray', borderWidth: 1 }}>
-                        <Text style={{ color: isGroupActive ? '#33f584' : 'gray' }}>Groups</Text>
+                    <Button size="md" variant="outline" action="primary" onPress={() => loadData('groups')} style={{ borderColor: isGroupActive ? '#8B5CF6' : '#24335E', borderWidth: 1, backgroundColor: isGroupActive ? '#8B5CF615' : 'transparent' }}>
+                        <Text style={{ color: isGroupActive ? '#8B5CF6' : '#829AC9', fontWeight: isGroupActive ? 'bold' : 'normal' }}>Groups</Text>
                     </Button>
-                    <Button size="md" variant="outline" action="primary" onPress={() => loadData('individual')} style={{ borderColor: !isGroupActive ? '#33f584' : 'gray', borderWidth: 1 }}>
-                        <Text style={{ color: !isGroupActive ? '#33f584' : 'gray' }}>Individual</Text>
+                    <Button size="md" variant="outline" action="primary" onPress={() => loadData('individual')} style={{ borderColor: !isGroupActive ? '#8B5CF6' : '#24335E', borderWidth: 1, backgroundColor: !isGroupActive ? '#8B5CF615' : 'transparent' }}>
+                        <Text style={{ color: !isGroupActive ? '#8B5CF6' : '#829AC9', fontWeight: !isGroupActive ? 'bold' : 'normal' }}>Individual</Text>
                     </Button>
                 </View>
 
                 {/* Content Area */}
                 <View className="p-2 w-full pb-24">
                     {loading ? (
-                        <ActivityIndicator size="large" color="#33f584" className="mt-4" />
+                        <ActivityIndicator size="large" color="#8B5CF6" className="mt-4" />
                     ) : (
                         isGroupActive ? (
                             <View className="gap-2">
                                 {groups.map((group) => (
-                                    <GroupItem key={group.id} group={group} currentUserId={userData?.userId || userId} />
+                                    <GroupItem key={group.id} group={group} />
                                 ))}
                             </View>
                         ) : (
@@ -392,6 +409,16 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
                 </View>
 
             </ScrollView>
+
+            {/* Modals triggered from header buttons */}
+            <AddExpenseModal
+                isVisible={isAddExpenseVisible}
+                onClose={() => { setIsAddExpenseVisible(false); fetchData('all'); }}
+            />
+            <CreateGroupModal
+                isVisible={isCreateGroupVisible}
+                onClose={() => { setIsCreateGroupVisible(false); fetchData('groups'); }}
+            />
         </View>
 
     );
@@ -400,7 +427,7 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username, userId }) => {
 const styles = StyleSheet.create({
     container: {
         // flex: 1,
-        backgroundColor: 'black',
+        backgroundColor: '#0B1128',
         color: 'white',
         padding: 0.03 * windowWidth,
     },

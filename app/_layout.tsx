@@ -7,7 +7,7 @@ import GlobalFab from "../src/components/GlobalFab";
 
 export default function Layout() {
   return (
-    <GluestackUIProvider mode="light">
+    <GluestackUIProvider mode="dark">
       <Stack screenOptions={{ headerShown: false }} />
       <GlobalFab />
     </GluestackUIProvider>

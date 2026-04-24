@@ -27,7 +27,7 @@ const GlobalFab = () => {
                     style={[styles.fabButton, styles.fabLeft]}
                     onPress={() => setIsCreateGroupModalVisible(true)}
                 >
-                    <Users color="black" size={20} />
+                    <Users color="white" size={20} />
                 </TouchableOpacity>
 
                 {/* Right Part - Add Expense */}
@@ -35,20 +35,18 @@ const GlobalFab = () => {
                     style={styles.fabButton}
                     onPress={() => setIsAddExpenseModalVisible(true)}
                 >
-                    <Receipt color="black" size={20} />
+                    <Receipt color="white" size={20} />
                 </TouchableOpacity>
             </View>
 
             <CreateGroupModal
                 isVisible={isCreateGroupModalVisible}
                 onClose={() => setIsCreateGroupModalVisible(false)}
-                currentUserId={currentUserId}
             />
 
             <AddExpenseModal
                 isVisible={isAddExpenseModalVisible}
                 onClose={() => setIsAddExpenseModalVisible(false)}
-                currentUserId={currentUserId}
             />
         </>
     );
@@ -59,7 +57,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 30,
         alignSelf: 'center',
-        backgroundColor: '#33f584', // Green accent
+        backgroundColor: '#8B5CF6', // Vibrant Purple
         borderRadius: 22,
         flexDirection: 'row',
         elevation: 5,
@@ -79,7 +77,7 @@ const styles = StyleSheet.create({
     },
     fabLeft: {
         borderRightWidth: 1,
-        borderRightColor: 'rgba(0,0,0,0.1)',
+        borderRightColor: 'rgba(255,255,255,0.2)',
     },
 });
 

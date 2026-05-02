@@ -1,92 +1,138 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Text } from "@/components/ui/text";
-import { ArrowLeft, User } from 'lucide-react-native';
-import { fetchExpenseDetails, ExpenseDetailData } from '../../src/util/apiService';
+import { ArrowLeft, User, Receipt, CreditCard, Calendar } from 'lucide-react-native';
+import { fetchExpenseByGroupAndId } from '../../src/util/apiService';
 import { getAuthData } from '../../src/util/authService';
-import { Divider } from "@/components/ui/divider";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ExpenseDetailsPage() {
-    const { expenseId, userId } = useLocalSearchParams<{ expenseId: string, userId: string }>();
+    const { expenseId, groupId } = useLocalSearchParams<{ expenseId: string; groupId: string }>();
     const [loading, setLoading] = useState(true);
-    const [details, setDetails] = useState<ExpenseDetailData | null>(null);
+    const [expense, setExpense] = useState<any>(null);
+    const [splits, setSplits] = useState<any[]>([]);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
+    const insets = useSafeAreaInsets();
 
     useEffect(() => {
         const load = async () => {
-            if (!expenseId) return;
+            const safeExpenseId = Array.isArray(expenseId) ? expenseId[0] : expenseId;
+            const safeGroupId   = Array.isArray(groupId)   ? groupId[0]   : groupId;
+
+            if (!safeExpenseId || !safeGroupId) {
+                setError(`Missing params — expenseId: ${safeExpenseId}, groupId: ${safeGroupId}`);
+                setLoading(false);
+                return;
+            }
+
             setLoading(true);
             try {
                 const auth = await getAuthData();
-                const fetchedUserId = auth.userId;
-                const safeUserId = Array.isArray(userId) ? userId[0] : userId;
+                setCurrentUserId(auth.userId);
 
-                const finalUserId = fetchedUserId || safeUserId;
-                setCurrentUserId(finalUserId);
-                console.log("Current User Id Resolved: " + finalUserId);
+                // Use the new contract: GET /api/groups/{groupId}/expenses/{expenseId}
+                const data = await fetchExpenseByGroupAndId(safeGroupId, safeExpenseId);
+                console.log('[ExpenseDetails] Full response:', JSON.stringify(data, null, 2));
 
-                const response = await fetchExpenseDetails(Array.isArray(expenseId) ? expenseId[0] : expenseId);
-                if (response.success && response.data) {
-                    setDetails(response.data);
+                // Handle various possible response shapes from the API
+                // Shape A: { expense: {...}, splits: [...], payers: [...] }
+                // Shape B: the expense object directly with nested splits/payers
+                let expenseObj: any;
+                let splitsArr: any[] = [];
+
+                if (data?.expense) {
+                    // Shape A
+                    expenseObj = data.expense;
+                    splitsArr  = data.splits || [];
+                } else {
+                    // Shape B — the whole object is the expense
+                    expenseObj = data;
+                    splitsArr  = data?.splits || [];
                 }
-            } catch (error) {
-                console.error("Failed to load expense details", error);
+
+                // Also pull payers as a fallback for split display
+                const payersArr = data?.payers || expenseObj?.payers || [];
+                if (splitsArr.length === 0 && payersArr.length > 0) {
+                    splitsArr = payersArr;
+                }
+
+                console.log('[ExpenseDetails] expense obj:', JSON.stringify(expenseObj, null, 2));
+                console.log('[ExpenseDetails] splits:', JSON.stringify(splitsArr, null, 2));
+
+                setExpense(expenseObj);
+                setSplits(splitsArr);
+            } catch (err: any) {
+                console.error('[ExpenseDetails] Error:', err);
+                setError(err?.message || 'Failed to load expense details');
             } finally {
                 setLoading(false);
             }
         };
         load();
-    }, [expenseId]);
+    }, [expenseId, groupId]);
 
     if (loading) {
         return (
-            <View style={styles.container} className="items-center justify-center">
-                <ActivityIndicator size="large" color="#33f584" />
+            <View style={[styles.container, { paddingTop: insets.top }]} className="items-center justify-center">
+                <ActivityIndicator size="large" color="#8B5CF6" />
+                <Text className="text-gray-400 mt-4">Loading expense details…</Text>
             </View>
         );
     }
 
-    if (!details) {
+    if (error || !expense) {
         return (
-            <View style={styles.container} className="items-center justify-center">
-                <Text className="text-white">Expense not found</Text>
+            <View style={[styles.container, { paddingTop: insets.top }]}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <View className="p-4 pt-6 flex-row items-center gap-4 border-b border-gray-800" style={{ backgroundColor: '#131B3A' }}>
+                    <TouchableOpacity onPress={() => router.back()}>
+                        <ArrowLeft color="white" size={24} />
+                    </TouchableOpacity>
+                    <Text className="text-white text-xl font-bold">Expense Details</Text>
+                </View>
+                <View className="flex-1 items-center justify-center p-8">
+                    <Receipt size={64} color="#24335E" />
+                    <Text className="text-white font-bold text-xl mt-4 text-center">Expense Not Found</Text>
+                    <Text className="text-gray-500 text-sm mt-2 text-center">{error || 'Could not load this expense.'}</Text>
+                    <Text className="text-gray-600 text-xs mt-4 text-center font-mono">
+                        groupId: {Array.isArray(groupId) ? groupId[0] : groupId}{'\n'}
+                        expenseId: {Array.isArray(expenseId) ? expenseId[0] : expenseId}
+                    </Text>
+                </View>
             </View>
         );
     }
 
-    const { expense, splits } = details;
-    const userSplit = splits.find(s => s.userId === currentUserId);
+    // Normalise field names — API may return different shapes
+    const title         = expense.description || expense.name || 'Expense';
+    const amount        = Number(expense.amount ?? expense.yourNetShare ?? 0);
+    const currencyCode  = expense.currency?.currencyName || expense.currency?.code 
+                        || expense.currencyCode || '';
+    // paidBy can be an object or just a name string
+    const paidBy        = expense.paidBy?.name || expense.paidByName 
+                        || expense.createdByName || 'Unknown';
+    const paidByUserId  = expense.paidBy?.userId || expense.paidByUserId || expense.createdById;
+    const expenseDate   = expense.date || expense.createdAt;
+    const splitType     = expense.splitType || '';
 
-    // Calculate shares using absolute values as API may return negatives for non-payers
-    const userShare = userSplit ? Math.abs(userSplit.amountOwed) : 0;
+    const userSplit     = splits.find((s: any) => s.userId === currentUserId);
+    const userShare     = userSplit ? Math.abs(Number(userSplit.amountOwed)) : 0;
 
     let displayAmount = 0;
-    let statusText = "You are not involved";
-    let statusColor = "#9ca3af"; // gray
+    let statusText = 'Not involved';
+    let statusColor = '#9ca3af';
 
-    if (expense.paidBy.userId === currentUserId) {
-        // Current user paid. They are owed: Total Amount - Their Share
-        // If their share is not explicitly in splits, we assume 0 (meaning they are owed full amount)
-        // But usually payer has a split too.
-        displayAmount = expense.amount - userShare;
-
-        if (displayAmount > 0.01) {
-            statusText = "You are owed";
-            statusColor = "#33f584"; // green
-        } else {
-            statusText = "You paid 100%"; // or settled?
-            statusColor = "#33f584";
-        }
-    } else {
-        // Current user did not pay. They owe their share.
+    if (paidByUserId === currentUserId) {
+        displayAmount = amount - userShare;
+        statusText    = displayAmount > 0.01 ? 'You are owed' : 'You paid everything';
+        statusColor   = '#10B981';
+    } else if (userShare > 0.01) {
         displayAmount = userShare;
-
-        if (displayAmount > 0.01) {
-            statusText = "You owe";
-            statusColor = "#f53344"; // red
-        }
+        statusText    = 'You owe';
+        statusColor   = '#F43F5E';
     }
 
     return (
@@ -94,77 +140,107 @@ export default function ExpenseDetailsPage() {
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* Header */}
-            <View className="p-4 pt-12 flex flex-row items-center gap-4 border-b border-gray-800" style={{ backgroundColor: '#1a1a1a' }}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <ArrowLeft color="white" size={24} />
+            <View style={{ paddingTop: insets.top + 12, backgroundColor: '#131B3A', paddingHorizontal: 20, paddingBottom: 16 }}>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
+                    <ArrowLeft color="white" size={26} />
                 </TouchableOpacity>
-                <Text className="text-white text-xl font-bold">Expense Details</Text>
+                <Text style={{ color: 'white', fontSize: 28, fontWeight: 'bold', lineHeight: 34, includeFontPadding: false, paddingVertical: 2 }}>{title}</Text>
+                {splitType ? <Text style={{ color: '#829AC9', fontSize: 12, marginTop: 4 }}>Split: {splitType}</Text> : null}
             </View>
 
-            <ScrollView>
-                {/* Main Info */}
-                <View className="p-6 items-center gap-2">
-                    <View className="w-16 h-16 bg-gray-700 rounded-full items-center justify-center mb-2">
-                        <Text className="text-2xl">🧾</Text>
-                    </View>
-                    <Text className="text-white text-2xl font-bold text-center">{expense.name}</Text>
-                    <Text className="text-gray-400 text-lg">{expense.currency.currencyName} {expense.amount.toFixed(2)}</Text>
-                    <Text className="text-gray-500 text-sm">
-                        Paid by {expense.paidBy.userId === currentUserId ? 'You' : expense.paidBy.name} on {new Date(expense.date).toLocaleDateString()}
+            <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Amount hero */}
+                <View style={styles.heroCard}>
+                    <Text style={{ color: '#829AC9', fontSize: 13, marginBottom: 4 }}>Total Amount</Text>
+                    <Text style={{ color: 'white', fontSize: 38, fontWeight: 'bold', lineHeight: 46, includeFontPadding: false, paddingVertical: 4 }}>
+                        {currencyCode} {amount.toFixed(2)}
                     </Text>
-                </View>
-
-                <Divider className="bg-gray-800" />
-
-                {/* Status for Current User */}
-                <View className="p-4 items-center">
-                    <View className="items-center">
-                        <Text className="text-gray-400">{statusText}</Text>
-                        <Text className="text-xl font-bold" style={{ color: statusColor }}>
-                            {expense.currency.currencyName} {displayAmount.toFixed(2)}
+                    <View style={[styles.statusBadge, { borderColor: statusColor }]}>
+                        <Text style={{ color: statusColor, fontWeight: '700', fontSize: 14 }}>
+                            {statusText}: {currencyCode} {displayAmount.toFixed(2)}
                         </Text>
                     </View>
                 </View>
 
-                <Divider className="bg-gray-800" />
-
-                {/* Split Details */}
-                <View className="p-4">
-                    <Text className="text-white font-bold mb-4 text-lg">Split Details</Text>
-                    <View className="gap-4">
-                        {splits.map((split) => (
-                            <View key={split.splitId} className="flex flex-row items-center justify-between">
-                                <View className="flex flex-row items-center gap-3">
-                                    <View className="w-8 h-8 rounded-full bg-gray-700 items-center justify-center">
-                                        <User size={16} color="white" />
-                                    </View>
-                                    <View>
-                                        <Text className="text-white font-medium">
-                                            {split.userId === currentUserId ? 'You' : (split.user?.name || 'Unknown')}
-                                        </Text>
-                                        {split.userId === expense.paidBy.userId && (
-                                            <Text className="text-xs text-green-400">paid {expense.currency.currencyName} {expense.amount.toFixed(2)}</Text>
-                                        )}
-                                    </View>
-                                </View>
-                                <View className="items-end">
-                                    <Text className="text-white font-bold">
-                                        {split.userId === expense.paidBy.userId ? 'owed' : 'owes'} {expense.currency.currencyName} {Math.abs(split.amountOwed).toFixed(2)}
-                                    </Text>
-                                </View>
-                            </View>
-                        ))}
+                {/* Meta info */}
+                <View style={styles.section}>
+                    <View style={styles.metaRow}>
+                        <CreditCard size={16} color="#829AC9" />
+                        <Text style={styles.metaLabel}>Paid by</Text>
+                        <Text style={styles.metaValue}>{paidByUserId === currentUserId ? 'You' : paidBy}</Text>
                     </View>
+                    {expenseDate && (
+                        <View style={styles.metaRow}>
+                            <Calendar size={16} color="#829AC9" />
+                            <Text style={styles.metaLabel}>Date</Text>
+                            <Text style={styles.metaValue}>{new Date(expenseDate).toLocaleDateString()}</Text>
+                        </View>
+                    )}
                 </View>
 
+                {/* Divider */}
+                <View style={styles.divider} />
+
+                {/* Split breakdown */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Split Breakdown</Text>
+                    {splits.length === 0 ? (
+                        <Text style={{ color: '#4B5E8A', textAlign: 'center', marginTop: 12 }}>No split data available.</Text>
+                    ) : (
+                        splits.map((split: any, idx: number) => {
+                            const name     = split.userId === currentUserId ? 'You' : (split.user?.name || split.userName || `User ${idx + 1}`);
+                            const owed     = Math.abs(Number(split.amountOwed || split.amount || 0));
+                            const isPayer  = split.userId === paidByUserId;
+                            const initial  = name.charAt(0).toUpperCase();
+                            return (
+                                <View key={split.splitId || split.userId || idx} style={styles.splitRow}>
+                                    <View style={styles.splitAvatar}>
+                                        <Text style={styles.splitAvatarText}>{initial}</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.splitName}>{name}</Text>
+                                        {isPayer && <Text style={{ color: '#10B981', fontSize: 11 }}>paid {currencyCode} {amount.toFixed(2)}</Text>}
+                                    </View>
+                                    <Text style={[styles.splitAmount, { color: isPayer ? '#10B981' : '#F43F5E' }]}>
+                                        {isPayer ? 'owed' : 'owes'} {currencyCode} {owed.toFixed(2)}
+                                    </Text>
+                                </View>
+                            );
+                        })
+                    )}
+                </View>
             </ScrollView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: 'black',
+    container: { flex: 1, backgroundColor: '#0B1128' },
+    heroCard: {
+        backgroundColor: '#131B3A', margin: 16, borderRadius: 20,
+        padding: 24, alignItems: 'center', borderWidth: 1, borderColor: '#24335E',
     },
+    statusBadge: {
+        marginTop: 16, paddingHorizontal: 16, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1,
+    },
+    section: { paddingHorizontal: 20, paddingVertical: 16 },
+    sectionTitle: { color: 'white', fontSize: 16, fontWeight: 'bold', marginBottom: 16 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+    metaLabel: { color: '#829AC9', fontSize: 14, flex: 1 },
+    metaValue: { color: 'white', fontSize: 14, fontWeight: '600' },
+    divider: { height: 1, backgroundColor: '#1C2854', marginHorizontal: 16 },
+    splitRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: '#131B3A', padding: 14, borderRadius: 14,
+        marginBottom: 10, borderWidth: 1, borderColor: '#24335E',
+    },
+    splitAvatar: {
+        width: 38, height: 38, borderRadius: 19,
+        backgroundColor: '#1C2854', alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: '#8B5CF640',
+    },
+    splitAvatarText: { color: '#8B5CF6', fontWeight: 'bold', fontSize: 16 },
+    splitName: { color: 'white', fontWeight: '600', fontSize: 14 },
+    splitAmount: { fontWeight: 'bold', fontSize: 13 },
 });

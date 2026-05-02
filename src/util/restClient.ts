@@ -9,7 +9,10 @@ console.log("Final API URL:", `${API_BASE_URL}${LOGIN_CONTEXT}`);
 // Generic request function
 export const request = async (url: string, options: RequestInit = {}) => {
   try {
-    console.log("Making API call to:", `${API_BASE_URL}${url}`);
+    console.log(`[API] ${options.method || 'GET'} ${API_BASE_URL}${url}`);
+    if (options.body) {
+      console.log('[API] Request payload:', options.body);
+    }
 
     const headers: HeadersInit = {
       ...options.headers,
@@ -28,10 +31,10 @@ export const request = async (url: string, options: RequestInit = {}) => {
         ...options,
         headers,
     });
-    console.log("Response status:", response.status);
+    console.log(`[API] Response status: ${response.status}`);
 
     const text = await response.text();
-    console.log("Response Text:", text);
+    console.log('[API] Response body:', text);
 
     let data;
     try {

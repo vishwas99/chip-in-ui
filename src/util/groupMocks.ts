@@ -10,7 +10,8 @@ export interface Group {
     description?: string;
     avatarUrl?: string | null;
     memberCount?: number;
-    createdAt: string;
+    createdAt?: string;
+    lastActivity?: string;
     userBalances: UserBalance[];
 }
 

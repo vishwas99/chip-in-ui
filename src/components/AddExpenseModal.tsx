@@ -1,342 +1,511 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, ActivityIndicator, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { createNewExpense, CreateExpenseRequest, fetchMyGroups, fetchAllCurrencies, fetchGroupDashboard, Currency } from '../util/apiService';
+import {
+    View, Modal, TouchableOpacity, StyleSheet, ActivityIndicator,
+    TextInput, ScrollView, KeyboardAvoidingView, Platform, Dimensions
+} from 'react-native';
+import { Text } from "@/components/ui/text";
+import { useAppToast } from './ToastManager';
+import { BlurView } from 'expo-blur';
+import {
+    createNewExpense, CreateExpenseRequest, fetchMyGroups,
+    fetchAllCurrencies, Currency, fetchGroupUsers
+} from '../util/apiService';
 import { getAuthData } from '../util/authService';
-import { ChevronDown, ChevronUp, CheckSquare, Square } from 'lucide-react-native';
+import {
+    X, ChevronDown, ChevronUp, Users, Info,
+    Search, CheckCircle2, AlertCircle, Percent, Hash, Equal, Check, Plus
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+
+const { height: WINDOW_HEIGHT } = Dimensions.get('window');
 
 interface AddExpenseModalProps {
     isVisible: boolean;
     onClose: () => void;
 }
 
-interface GroupOption { groupId: string; groupName: string; }
-interface MemberOption { userId: string; name: string; }
+interface GroupOption { groupId: string; name: string; }
+interface MemberOption { userId: string; name: string; email?: string; }
 
-// Expense categories (free string, per contract)
-const EXPENSE_CATEGORIES = ['Food', 'Travel', 'Accommodation', 'Entertainment', 'Shopping', 'Utilities', 'Transport', 'Other'];
-
-// Expense type per contract: EXPENSE | SETTLEMENT
-const EXPENSE_TYPES = ['EXPENSE', 'SETTLEMENT'];
+type SplitMode = 'EQUAL' | 'PERCENTAGE' | 'RATIO';
 
 const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isVisible, onClose }) => {
+    const { showToast } = useAppToast();
+
+    // ── Form State ──────────────────────────────────────────────────
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
     const [selectedGroupId, setSelectedGroupId] = useState('');
     const [selectedCurrencyId, setSelectedCurrencyId] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('Food');
-    const [splitType, setSplitType] = useState<'EQUAL' | 'UNEQUAL'>('EQUAL');
-    const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-    const [customSplitAmounts, setCustomSplitAmounts] = useState<Record<string, string>>({});
+    const [splitType, setSplitType] = useState<SplitMode>('EQUAL');
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+    // ── Data State ──────────────────────────────────────────────────
     const [groups, setGroups] = useState<GroupOption[]>([]);
     const [currencies, setCurrencies] = useState<Currency[]>([]);
-    const [members, setMembers] = useState<MemberOption[]>([]);
+    const [groupMembers, setGroupMembers] = useState<MemberOption[]>([]);
+    const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+    const [splitValues, setSplitValues] = useState<Record<string, string>>({});
 
-    const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
-    const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
-    const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+    // ── Search State (Frontend Only) ───────────────────────────────
+    const [participantSearch, setParticipantSearch] = useState('');
+    const [isParticipantDropdownOpen, setIsParticipantDropdownOpen] = useState(false);
 
+    // ── UI State ────────────────────────────────────────────────────
     const [loading, setLoading] = useState(false);
     const [fetchingData, setFetchingData] = useState(false);
-    const [error, setError] = useState('');
+    const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
+    const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
 
     useEffect(() => {
         if (isVisible) fetchInitialData();
     }, [isVisible]);
-
-    useEffect(() => {
-        if (selectedGroupId) loadGroupMembers(selectedGroupId);
-        else { setMembers([]); setSelectedMemberIds([]); }
-    }, [selectedGroupId]);
 
     const fetchInitialData = async () => {
         setFetchingData(true);
         try {
             const auth = await getAuthData();
             setCurrentUserId(auth.userId);
-
             const [groupsRes, currenciesRes] = await Promise.all([
-                fetchMyGroups(),          // GET /api/groups/me
+                fetchMyGroups(),
                 fetchAllCurrencies(),
             ]);
-
-            // GroupResponse shape: { groupId, name, description, type, defaultCurrency, ... }
-            const mappedGroups = (groupsRes || []).map((g: any): GroupOption => ({
+            const mappedGroups = (groupsRes || []).map((g: any) => ({
                 groupId: g.groupId || g.group?.groupId,
-                groupName: g.name || g.groupName || g.group?.name || 'Unnamed Group',
+                name: g.name || g.groupName || g.group?.name || 'Unnamed Group',
             }));
             setGroups(mappedGroups);
-
             setCurrencies(currenciesRes || []);
-            if (currenciesRes?.length > 0 && !selectedCurrencyId) {
-                setSelectedCurrencyId(currenciesRes[0].currencyId);
+            if (currenciesRes?.length > 0) {
+                const defaultCur = currenciesRes.find((c: any) => c.code === 'INR') || currenciesRes[0];
+                setSelectedCurrencyId(defaultCur.currencyId);
             }
         } catch (e) {
-            console.error('Failed to load data for expense modal', e);
+            console.error('Failed to load initial data', e);
         } finally {
             setFetchingData(false);
         }
     };
 
+    useEffect(() => {
+        if (selectedGroupId) {
+            loadGroupMembers(selectedGroupId);
+        } else {
+            setGroupMembers([]);
+            setSelectedMemberIds([]);
+            setSplitValues({});
+        }
+    }, [selectedGroupId]);
+
     const loadGroupMembers = async (groupId: string) => {
         try {
-            // Use group dashboard to get member list via userBalances
-            const currencyId = selectedCurrencyId;
-            const dashboard = await fetchGroupDashboard(groupId);
-            const balances: MemberOption[] = (dashboard.userBalances || []).map((b: any): MemberOption => ({
-                userId: b.userId || b.user?.userId || b.user?.id,
-                name: b.userName || b.user?.name || b.name || 'Unknown',
-            })).filter((m: MemberOption) => m.userId);
-            setMembers(balances);
-            setSelectedMemberIds(balances.map(m => m.userId));
-            const initial: Record<string, string> = {};
-            balances.forEach(m => initial[m.userId] = '');
-            setCustomSplitAmounts(initial);
+            const membersData = await fetchGroupUsers(groupId);
+            const mappedMembers: MemberOption[] = (membersData || []).map((m: any) => ({
+                userId: m.userId || m.id,
+                name: m.name,
+                email: m.email,
+            }));
+            setGroupMembers(mappedMembers);
+            const me = mappedMembers.find(m => m.userId === currentUserId);
+            if (me) {
+                setSelectedMemberIds([me.userId]);
+                setSplitValues({ [me.userId]: '' });
+            } else {
+                setSelectedMemberIds([]);
+                setSplitValues({});
+            }
         } catch (e) {
             console.error('Failed to load group members', e);
         }
     };
 
-    const toggleMember = (userId: string) => {
-        setSelectedMemberIds(prev =>
-            prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
-        );
+
+
+    const filteredOptions = groupMembers.filter(m => {
+        const query = participantSearch.toLowerCase().trim();
+        const isNotSelected = !selectedMemberIds.includes(m.userId);
+        const matchesQuery = m.name.toLowerCase().includes(query) || m.email?.toLowerCase().includes(query);
+        return isNotSelected && matchesQuery;
+    });
+
+    const handleSelectParticipant = (user: MemberOption) => {
+        if (!selectedMemberIds.includes(user.userId)) {
+            setSelectedMemberIds(prev => [...prev, user.userId]);
+            setSplitValues(prev => ({ ...prev, [user.userId]: '' }));
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        setParticipantSearch('');
+        setIsParticipantDropdownOpen(false);
     };
 
-    const getGroupName = () => groups.find(g => g.groupId === selectedGroupId)?.groupName || 'Select Group';
-    const getCurrencyName = () => {
-        const c = currencies.find(c => c.currencyId === selectedCurrencyId);
-        return c ? `${c.symbol} ${c.name} (${c.code})` : 'Select Currency';
+    const removeParticipant = (uid: string) => {
+        setSelectedMemberIds(prev => prev.filter(id => id !== uid));
     };
 
-    const handleCreate = async () => {
-        setError('');
-        if (!selectedGroupId) { setError('Please select a group'); return; }
-        if (!description) { setError('Please enter a description'); return; }
-        if (!amount || isNaN(Number(amount))) { setError('Please enter a valid amount'); return; }
-        if (!selectedCurrencyId) { setError('Please select a currency'); return; }
-        if (!currentUserId) { setError('User not authenticated'); return; }
-
-        const totalAmount = Number(amount);
-        let splits: { userId: string; amountOwed: number }[] = [];
-
+    const calculateTally = () => {
+        const totalAmount = parseFloat(amount) || 0;
         if (splitType === 'EQUAL') {
-            if (selectedMemberIds.length === 0) { setError('Select at least one member'); return; }
-            const share = totalAmount / selectedMemberIds.length;
-            splits = selectedMemberIds.map(uid => ({ userId: uid, amountOwed: share }));
+            const count = selectedMemberIds.length;
+            const perPerson = count > 0 ? totalAmount / count : 0;
+            return { total: count, unit: 'people', perPerson };
         } else {
             let sum = 0;
-            for (const m of members) {
-                const val = parseFloat(customSplitAmounts[m.userId] || '0');
-                if (val > 0) { splits.push({ userId: m.userId, amountOwed: val }); sum += val; }
+            selectedMemberIds.forEach(uid => {
+                sum += parseFloat(splitValues[uid] || '0');
+            });
+            return { total: sum, unit: splitType === 'PERCENTAGE' ? '%' : 'shares', remaining: 100 - sum };
+        }
+    };
+
+    const tally = calculateTally();
+
+    const handleCreate = async () => {
+        if (!selectedGroupId) { showToast('Missing Info', 'Please select a group', 'warning'); return; }
+        if (!description) { showToast('Missing Info', 'Please enter a description', 'warning'); return; }
+        const totalAmount = parseFloat(amount);
+        if (isNaN(totalAmount) || totalAmount <= 0) { showToast('Invalid Amount', 'Please enter a valid amount', 'warning'); return; }
+        if (selectedMemberIds.length === 0) { showToast('Missing Participants', 'Select at least one participant', 'warning'); return; }
+
+        let splits: { userId: string, amountOwed: number }[] = [];
+        if (splitType === 'EQUAL') {
+            const share = totalAmount / selectedMemberIds.length;
+            splits = selectedMemberIds.map(uid => ({ userId: uid, amountOwed: share }));
+        } else if (splitType === 'PERCENTAGE') {
+            if (Math.abs(tally.total - 100) > 0.1) {
+                showToast('Incomplete Split', `Percentages must sum to 100% (Current: ${tally.total}%)`, 'error');
+                return;
             }
-            if (Math.abs(sum - totalAmount) > 0.01) { setError(`Split total (${sum.toFixed(2)}) ≠ amount (${totalAmount.toFixed(2)})`); return; }
-            if (splits.length === 0) { setError('Enter split amounts'); return; }
+            splits = selectedMemberIds.map(uid => ({
+                userId: uid,
+                amountOwed: (totalAmount * parseFloat(splitValues[uid] || '0')) / 100
+            }));
+        } else if (splitType === 'RATIO') {
+            if (tally.total <= 0) {
+                showToast('Invalid Ratio', 'Total ratio must be greater than 0', 'error');
+                return;
+            }
+            splits = selectedMemberIds.map(uid => ({
+                userId: uid,
+                amountOwed: (totalAmount * parseFloat(splitValues[uid] || '0')) / tally.total
+            }));
         }
 
         setLoading(true);
         try {
-            // POST /api/groups/{groupId}/expenses
             const payload: CreateExpenseRequest = {
                 description,
                 amount: totalAmount,
                 currencyId: selectedCurrencyId,
                 splitType,
-                type: selectedCategory,   // expense category string
-                payers: [{ userId: currentUserId, paidAmount: totalAmount }],
+                payers: [{ userId: currentUserId!, paidAmount: totalAmount }],
                 splits,
             };
-
-            console.log('Add Expense Payload:', JSON.stringify(payload, null, 2));
             await createNewExpense(selectedGroupId, payload);
-
-            // Reset form
-            setDescription(''); setAmount(''); setSelectedGroupId('');
-            setSelectedMemberIds([]); setCustomSplitAmounts({});
-            onClose();
-            Alert.alert('Success', 'Expense added successfully!');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            showToast('Success', 'Expense added successfully! 🎉', 'success');
+            resetAndClose();
         } catch (err: any) {
-            setError(err?.message || 'Failed to add expense');
-            console.error(err);
+            showToast('Error', err?.message || 'Could not add expense', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const closeAll = () => { setIsGroupDropdownOpen(false); setIsCurrencyDropdownOpen(false); setIsCategoryDropdownOpen(false); };
+    const resetAndClose = () => {
+        setDescription(''); setAmount(''); setSelectedGroupId('');
+        setGroupMembers([]); setSelectedMemberIds([]); setSplitValues({});
+        onClose();
+    };
+
+    const getSelectedGroupName = () => groups.find(g => g.groupId === selectedGroupId)?.name || 'Select Group';
+    const getSelectedCurrency = () => currencies.find(c => c.currencyId === selectedCurrencyId);
 
     return (
         <Modal animationType="slide" transparent visible={isVisible} onRequestClose={onClose}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.centeredView}>
-                <View style={styles.modalView}>
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                        <Text style={styles.modalText}>Add New Expense</Text>
-                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            <BlurView intensity={30} tint="dark" style={styles.overlay}>
+                <KeyboardAvoidingView 
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+                    style={styles.keyboardView}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+                >
+                    <View style={styles.sheet}>
+                        <View style={styles.header}>
+                            <View>
+                                <Text style={styles.headerTitle}>Add Expense</Text>
+                                <Text style={styles.headerSubtitle}>Split with anyone in the group</Text>
+                            </View>
+                            <TouchableOpacity style={styles.closeBtn} onPress={onClose}><X color="#829AC9" size={24} /></TouchableOpacity>
+                        </View>
 
-                        {fetchingData ? (
-                            <ActivityIndicator size="large" color="#8B5CF6" style={{ marginVertical: 20 }} />
-                        ) : (
-                            <>
-                                {/* Group Dropdown */}
-                                <Text style={styles.label}>Group *</Text>
-                                <TouchableOpacity style={styles.dropdown} onPress={() => { closeAll(); setIsGroupDropdownOpen(!isGroupDropdownOpen); }}>
-                                    <Text style={styles.dropdownText}>{getGroupName()}</Text>
-                                    {isGroupDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
-                                </TouchableOpacity>
-                                {isGroupDropdownOpen && (
-                                    <View style={styles.dropdownList}>
-                                        <ScrollView style={{ maxHeight: 140 }} nestedScrollEnabled>
-                                            {groups.map(g => (
-                                                <TouchableOpacity key={g.groupId} style={styles.dropdownItem} onPress={() => { setSelectedGroupId(g.groupId); setIsGroupDropdownOpen(false); }}>
-                                                    <Text style={[styles.dropdownItemText, selectedGroupId === g.groupId && { color: '#8B5CF6', fontWeight: 'bold' }]}>{g.groupName}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                            {groups.length === 0 && <Text style={styles.emptyText}>No groups found</Text>}
-                                        </ScrollView>
-                                    </View>
-                                )}
+                        <ScrollView 
+                            showsVerticalScrollIndicator={false} 
+                            keyboardShouldPersistTaps="handled" 
+                            style={styles.scroll}
+                            contentContainerStyle={styles.scrollContent}
+                        >
+                            <Text style={styles.label}>Select Group</Text>
+                            <TouchableOpacity style={styles.dropdown} onPress={() => setIsGroupDropdownOpen(!isGroupDropdownOpen)}>
+                                <Users size={18} color="#8B5CF6" style={{ marginRight: 10 }} />
+                                <Text numberOfLines={1} style={styles.dropdownText}>{getSelectedGroupName()}</Text>
+                                <ChevronDown size={18} color="#4B5E8A" />
+                            </TouchableOpacity>
 
-                                {/* Description */}
-                                <Text style={styles.label}>Description *</Text>
-                                <TextInput style={styles.input} placeholder="e.g. Dinner at restaurant" placeholderTextColor="#9ca3af" value={description} onChangeText={setDescription} />
-
-                                {/* Amount */}
-                                <Text style={styles.label}>Amount *</Text>
-                                <TextInput style={styles.input} placeholder="0.00" placeholderTextColor="#9ca3af" keyboardType="numeric" value={amount} onChangeText={setAmount} />
-
-                                {/* Currency Dropdown */}
-                                <Text style={styles.label}>Currency *</Text>
-                                <TouchableOpacity style={styles.dropdown} onPress={() => { closeAll(); setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen); }}>
-                                    <Text style={styles.dropdownText}>{getCurrencyName()}</Text>
-                                    {isCurrencyDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
-                                </TouchableOpacity>
-                                {isCurrencyDropdownOpen && (
-                                    <View style={styles.dropdownList}>
-                                        <ScrollView style={{ maxHeight: 140 }} nestedScrollEnabled>
-                                            {currencies.map(c => (
-                                                <TouchableOpacity key={c.currencyId} style={styles.dropdownItem} onPress={() => { setSelectedCurrencyId(c.currencyId); setIsCurrencyDropdownOpen(false); }}>
-                                                    <Text style={[styles.dropdownItemText, selectedCurrencyId === c.currencyId && { color: '#8B5CF6', fontWeight: 'bold' }]}>{c.symbol} {c.name} ({c.code})</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {/* Expense Category */}
-                                <Text style={styles.label}>Category</Text>
-                                <TouchableOpacity style={styles.dropdown} onPress={() => { closeAll(); setIsCategoryDropdownOpen(!isCategoryDropdownOpen); }}>
-                                    <Text style={styles.dropdownText}>{selectedCategory}</Text>
-                                    {isCategoryDropdownOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
-                                </TouchableOpacity>
-                                {isCategoryDropdownOpen && (
-                                    <View style={styles.dropdownList}>
-                                        {EXPENSE_CATEGORIES.map(cat => (
-                                            <TouchableOpacity key={cat} style={styles.dropdownItem} onPress={() => { setSelectedCategory(cat); setIsCategoryDropdownOpen(false); }}>
-                                                <Text style={[styles.dropdownItemText, selectedCategory === cat && { color: '#8B5CF6', fontWeight: 'bold' }]}>{cat}</Text>
+                            {isGroupDropdownOpen && (
+                                <View style={styles.dropdownList}>
+                                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                        {groups.map(g => (
+                                            <TouchableOpacity key={g.groupId} style={styles.dropdownItem} onPress={() => { setSelectedGroupId(g.groupId); setIsGroupDropdownOpen(false); }}>
+                                                <Text style={styles.dropdownItemText}>{g.name}</Text>
                                             </TouchableOpacity>
                                         ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            <View style={styles.inputRow}>
+                                <View style={{ flex: 1.5, marginRight: 12 }}>
+                                    <Text style={styles.label}>Amount</Text>
+                                    <View style={styles.amountInputWrap}>
+                                        <TouchableOpacity onPress={() => setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen)} style={styles.currencyBtn}>
+                                            <Text style={styles.currencyText}>{getSelectedCurrency()?.symbol || '₹'}</Text>
+                                            <ChevronDown size={12} color="#8B5CF6" />
+                                        </TouchableOpacity>
+                                        <TextInput
+                                            style={styles.amountInput}
+                                            placeholder="0.00"
+                                            placeholderTextColor="#4B5E8A"
+                                            keyboardType="numeric"
+                                            value={amount}
+                                            onChangeText={setAmount}
+                                        />
                                     </View>
-                                )}
-
-                                {/* Split Section */}
-                                {members.length > 0 && (
-                                    <View style={styles.splitSection}>
-                                        <Text style={styles.sectionHeader}>Split Expense</Text>
-
-                                        {/* Toggle */}
-                                        <View style={styles.splitToggleContainer}>
-                                            {(['EQUAL', 'UNEQUAL'] as const).map(mode => (
-                                                <TouchableOpacity key={mode} style={[styles.splitToggleButton, splitType === mode && styles.splitToggleButtonActive]} onPress={() => setSplitType(mode)}>
-                                                    <Text style={[styles.splitToggleText, splitType === mode && styles.splitToggleTextActive]}>{mode === 'EQUAL' ? 'Equally' : 'Unequally'}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-
-                                        {/* Members */}
-                                        <ScrollView style={styles.membersList} nestedScrollEnabled>
-                                            {members.map(member => {
-                                                const isSelected = selectedMemberIds.includes(member.userId);
-                                                const equalAmt = (amount && !isNaN(Number(amount)) && selectedMemberIds.length > 0)
-                                                    ? (Number(amount) / selectedMemberIds.length).toFixed(2) : '0.00';
-                                                return (
-                                                    <View key={member.userId} style={styles.memberRow}>
-                                                        <View style={styles.memberInfo}>
-                                                            {splitType === 'EQUAL' && (
-                                                                <TouchableOpacity onPress={() => toggleMember(member.userId)}>
-                                                                    {isSelected ? <CheckSquare size={20} color="#8B5CF6" /> : <Square size={20} color="#9ca3af" />}
-                                                                </TouchableOpacity>
-                                                            )}
-                                                            <Text style={styles.memberName}>{member.name}</Text>
-                                                        </View>
-                                                        {splitType === 'EQUAL' ? (
-                                                            <Text style={styles.memberAmount}>{isSelected ? equalAmt : '0.00'}</Text>
-                                                        ) : (
-                                                            <TextInput
-                                                                style={styles.amountInput}
-                                                                placeholder="0.00"
-                                                                placeholderTextColor="#6b7280"
-                                                                keyboardType="numeric"
-                                                                value={customSplitAmounts[member.userId] || ''}
-                                                                onChangeText={val => setCustomSplitAmounts(prev => ({ ...prev, [member.userId]: val }))}
-                                                            />
-                                                        )}
-                                                    </View>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {/* Buttons */}
-                                <View style={styles.buttonContainer}>
-                                    <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={onClose} disabled={loading}>
-                                        <Text style={styles.textStyle}>Cancel</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={[styles.button, styles.buttonCreate]} onPress={handleCreate} disabled={loading}>
-                                        {loading ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.textStyle}>Add</Text>}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.label}>Currency</Text>
+                                    <TouchableOpacity style={styles.dropdown} onPress={() => setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen)}>
+                                        <Text style={styles.dropdownText}>{getSelectedCurrency()?.code || 'INR'}</Text>
                                     </TouchableOpacity>
                                 </View>
-                            </>
-                        )}
-                    </ScrollView>
-                </View>
-            </KeyboardAvoidingView>
+                            </View>
+
+                            {isCurrencyDropdownOpen && (
+                                <View style={[styles.dropdownList, { top: 205 }]}>
+                                    <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                        {currencies.map(c => (
+                                            <TouchableOpacity key={c.currencyId} style={styles.dropdownItem} onPress={() => { setSelectedCurrencyId(c.currencyId); setIsCurrencyDropdownOpen(false); }}>
+                                                <Text style={styles.dropdownItemText}>{c.code} - {c.name}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            <Text style={styles.label}>Description</Text>
+                            <TextInput
+                                style={styles.descInput}
+                                placeholder="What was this for?"
+                                placeholderTextColor="#4B5E8A"
+                                value={description}
+                                onChangeText={setDescription}
+                            />
+
+                            <Text style={styles.label}>Participants</Text>
+                            <View style={[styles.searchBarWrap, isParticipantDropdownOpen && styles.searchBarWrapActive]}>
+                                <Search size={18} color="#8B5CF6" style={{ marginRight: 10 }} />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder={selectedGroupId ? "Search group members..." : "Select a group first"}
+                                    placeholderTextColor="#4B5E8A"
+                                    value={participantSearch}
+                                    onChangeText={t => { setParticipantSearch(t); setIsParticipantDropdownOpen(true); }}
+                                    onFocus={() => setIsParticipantDropdownOpen(true)}
+                                    disabled={!selectedGroupId}
+                                />
+                                <TouchableOpacity onPress={() => setIsParticipantDropdownOpen(!isParticipantDropdownOpen)}>
+                                    {isParticipantDropdownOpen ? <ChevronUp size={20} color="#4B5E8A" /> : <ChevronDown size={20} color="#4B5E8A" />}
+                                </TouchableOpacity>
+                            </View>
+
+                            {isParticipantDropdownOpen && (
+                                <View style={styles.participantDropdown}>
+                                    <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                        {filteredOptions.length > 0 ? (
+                                            filteredOptions.map(user => (
+                                                <TouchableOpacity key={user.userId} style={styles.participantItem} onPress={() => handleSelectParticipant(user)}>
+                                                    <View style={styles.avatarSmall}><Text style={styles.avatarTextSmall}>{user.name[0]}</Text></View>
+                                                    <View style={{ flex: 1 }}>
+                                                        <Text style={styles.participantName}>{user.name}</Text>
+                                                        <Text style={styles.participantEmail}>{user.email}</Text>
+                                                    </View>
+                                                    <Plus size={16} color="#8B5CF6" />
+                                                </TouchableOpacity>
+                                            ))
+                                        ) : (
+                                            <Text style={styles.noResultText}>{participantSearch ? 'No matches found' : 'No more members to add'}</Text>
+                                        )}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            <View style={styles.splitSelector}>
+                                {(['EQUAL', 'PERCENTAGE', 'RATIO'] as SplitMode[]).map(mode => (
+                                    <TouchableOpacity key={mode} style={[styles.splitTab, splitType === mode && styles.splitTabActive]} onPress={() => setSplitType(mode)}>
+                                        <Text style={[styles.splitTabText, splitType === mode && styles.splitTabTextActive]}>{mode.charAt(0) + mode.slice(1).toLowerCase()}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <View style={styles.selectedList}>
+                                {selectedMemberIds.length === 0 ? (
+                                    <Text style={styles.emptyText}>No participants selected. Use the search above.</Text>
+                                ) : (
+                                    selectedMemberIds.map(uid => {
+                                        const user = groupMembers.find(m => m.userId === uid);
+                                        if (!user) return null;
+                                        return (
+                                            <View key={uid} style={styles.selectedRow}>
+                                                <View style={styles.userInfo}>
+                                                    <View style={styles.avatar}><Text style={styles.avatarText}>{user.name[0]}</Text></View>
+                                                    <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+                                                </View>
+                                                {splitType === 'EQUAL' ? (
+                                                    <Text style={styles.equalAmount}>{getSelectedCurrency()?.symbol || '₹'}{(tally.perPerson || 0).toFixed(2)}</Text>
+                                                ) : (
+                                                    <View style={styles.splitInputWrap}>
+                                                        <TextInput
+                                                            style={styles.splitInput}
+                                                            placeholder="0"
+                                                            placeholderTextColor="#4B5E8A"
+                                                            keyboardType="numeric"
+                                                            value={splitValues[uid] || ''}
+                                                            onChangeText={v => setSplitValues(prev => ({ ...prev, [uid]: v }))}
+                                                        />
+                                                        <Text style={styles.splitUnit}>{splitType === 'PERCENTAGE' ? '%' : 'sh'}</Text>
+                                                    </View>
+                                                )}
+                                                <TouchableOpacity onPress={() => removeParticipant(uid)} style={styles.removeBtn}>
+                                                    <X size={14} color="#EF4444" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        );
+                                    })
+                                )}
+                            </View>
+
+                            {selectedMemberIds.length > 0 && splitType !== 'EQUAL' && (
+                                <View style={[styles.tallyBox, Math.abs(tally.total - 100) > 0.1 && splitType === 'PERCENTAGE' && styles.tallyBoxError]}>
+                                    <View style={styles.tallyMain}>
+                                        <Text style={styles.tallyLabel}>Total {splitType.toLowerCase()} allocated</Text>
+                                        <Text style={styles.tallyValue}>{tally.total.toFixed(1)}{tally.unit}</Text>
+                                    </View>
+                                    {splitType === 'PERCENTAGE' && (
+                                        <View style={styles.tallyStatus}>
+                                            <Text style={styles.tallyStatusText}>
+                                                {tally.remaining > 0 ? `${tally.remaining.toFixed(1)}% left` : tally.remaining < 0 ? `${Math.abs(tally.remaining).toFixed(1)}% over` : 'Correctly split!'}
+                                            </Text>
+                                            {Math.abs(tally.remaining) > 0.1 && <AlertCircle size={14} color="#F59E0B" />}
+                                            {Math.abs(tally.remaining) <= 0.1 && <Check size={14} color="#10B981" />}
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+                        </ScrollView>
+
+                        <View style={styles.footer}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={loading}><Text style={styles.buttonText}>Cancel</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.submitButton, loading && { opacity: 0.7 }]} onPress={handleCreate} disabled={loading}>
+                                {loading ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.buttonText}>Create Expense</Text>}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </BlurView>
         </Modal>
     );
 };
 
 const styles = StyleSheet.create({
-    centeredView: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' },
-    modalView: { margin: 20, backgroundColor: '#131B3A', borderRadius: 20, padding: 25, width: '92%', elevation: 5 },
-    buttonContainer: { flexDirection: 'row', justifyContent: 'flex-end', width: '100%', marginTop: 20, gap: 10 },
-    button: { borderRadius: 10, padding: 10, elevation: 2, minWidth: 80, alignItems: 'center' },
-    buttonClose: { backgroundColor: '#ef4444' },
-    buttonCreate: { backgroundColor: '#8B5CF6' },
-    textStyle: { color: 'white', fontWeight: 'bold', textAlign: 'center' },
-    modalText: { marginBottom: 15, textAlign: 'center', fontSize: 20, fontWeight: 'bold', color: 'white', alignSelf: 'center' },
-    label: { color: '#9ca3af', marginBottom: 5, marginTop: 10, fontSize: 13 },
-    input: { height: 45, width: '100%', borderColor: '#24335E', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, color: 'white', backgroundColor: '#0B1128' },
-    dropdown: { height: 45, width: '100%', borderColor: '#24335E', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0B1128' },
-    dropdownText: { color: 'white' },
-    errorText: { color: '#ef4444', marginBottom: 10, alignSelf: 'center', fontSize: 13 },
-    dropdownList: { backgroundColor: '#1C2854', borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: '#24335E', zIndex: 1000 },
-    dropdownItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: '#24335E' },
-    dropdownItemText: { color: 'white' },
-    emptyText: { color: 'gray', padding: 10, textAlign: 'center' },
-    splitSection: { marginTop: 20, width: '100%' },
-    sectionHeader: { color: '#9ca3af', fontSize: 13, marginBottom: 10 },
-    splitToggleContainer: { flexDirection: 'row', backgroundColor: '#1C2854', borderRadius: 8, padding: 2, marginBottom: 10 },
-    splitToggleButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
-    splitToggleButtonActive: { backgroundColor: '#8B5CF6' },
-    splitToggleText: { color: '#9ca3af', fontSize: 14 },
-    splitToggleTextActive: { color: 'white', fontWeight: 'bold' },
-    membersList: { maxHeight: 160, borderWidth: 1, borderColor: '#24335E', borderRadius: 8, padding: 5 },
-    memberRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: '#1C2854' },
-    memberInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-    memberName: { color: 'white', flex: 1 },
-    memberAmount: { color: 'white', fontWeight: 'bold', minWidth: 60, textAlign: 'right' },
-    amountInput: { backgroundColor: '#0B1128', borderRadius: 5, paddingHorizontal: 8, paddingVertical: 4, color: 'white', width: 80, textAlign: 'right', borderWidth: 1, borderColor: '#24335E' },
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+    keyboardView: { width: '100%', justifyContent: 'flex-end' },
+    sheet: { 
+        backgroundColor: '#0B1128', 
+        borderTopLeftRadius: 32, 
+        borderTopRightRadius: 32, 
+        padding: 24, 
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        maxHeight: WINDOW_HEIGHT * 0.9, 
+        minHeight: WINDOW_HEIGHT * 0.5,
+        borderWidth: 1, 
+        borderColor: '#1C2854',
+        width: '100%'
+    },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+    headerTitle: { color: 'white', fontSize: 22, fontWeight: 'bold' },
+    headerSubtitle: { color: '#829AC9', fontSize: 13, marginTop: 4 },
+    closeBtn: { padding: 4 },
+
+    scroll: { flexGrow: 0 },
+    scrollContent: { paddingBottom: 20 },
+
+    label: { color: '#829AC9', fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: 14 },
+    dropdown: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#131B3A', borderRadius: 14, paddingHorizontal: 16, height: 48, borderWidth: 1, borderColor: '#24335E' },
+    dropdownText: { color: 'white', flex: 1, fontSize: 14 },
+    dropdownList: { backgroundColor: '#1C2854', borderRadius: 14, marginTop: 4, borderWidth: 1, borderColor: '#24335E', overflow: 'hidden', position: 'absolute', width: '100%', zIndex: 100 },
+    dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#24335E' },
+    dropdownItemText: { color: 'white', fontSize: 14 },
+
+    inputRow: { flexDirection: 'row', marginTop: 8 },
+    amountInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#131B3A', borderRadius: 14, height: 48, borderWidth: 1, borderColor: '#24335E', overflow: 'hidden' },
+    currencyBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C2854', paddingHorizontal: 12, height: '100%', borderRightWidth: 1, borderRightColor: '#24335E' },
+    currencyText: { color: '#8B5CF6', fontWeight: 'bold', fontSize: 15, marginRight: 4 },
+    amountInput: { flex: 1, color: 'white', fontSize: 17, fontWeight: 'bold', paddingHorizontal: 12 },
+    descInput: { backgroundColor: '#131B3A', borderRadius: 14, paddingHorizontal: 16, height: 48, color: 'white', fontSize: 14, borderWidth: 1, borderColor: '#24335E' },
+
+    searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#131B3A', borderRadius: 14, paddingHorizontal: 16, height: 48, borderWidth: 1, borderColor: '#24335E' },
+    searchBarWrapActive: { borderColor: '#8B5CF6' },
+    searchInput: { flex: 1, color: 'white', fontSize: 14 },
+
+    participantDropdown: { backgroundColor: '#1C2854', borderRadius: 14, marginTop: 4, borderWidth: 1, borderColor: '#8B5CF6', paddingBottom: 8, zIndex: 200 },
+    participantItem: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingHorizontal: 16, gap: 12 },
+    participantName: { color: 'white', fontSize: 14, fontWeight: '600' },
+    participantEmail: { color: '#829AC9', fontSize: 11 },
+    noResultText: { color: '#4B5E8A', textAlign: 'center', padding: 20, fontSize: 14 },
+
+    splitSelector: { flexDirection: 'row', backgroundColor: '#131B3A', borderRadius: 14, padding: 4, marginTop: 18, marginBottom: 12 },
+    splitTab: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 10 },
+    splitTabActive: { backgroundColor: '#8B5CF6' },
+    splitTabText: { color: '#829AC9', fontSize: 12, fontWeight: '600' },
+    splitTabTextActive: { color: 'white' },
+
+    selectedList: { backgroundColor: '#131B3A', borderRadius: 16, padding: 6, marginTop: 6 },
+    selectedRow: { flexDirection: 'row', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: '#1C2854', gap: 10 },
+    userInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
+    avatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#8B5CF6', alignItems: 'center', justifyContent: 'center' },
+    avatarSmall: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#8B5CF6', alignItems: 'center', justifyContent: 'center' },
+    avatarText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
+    avatarTextSmall: { color: 'white', fontWeight: 'bold', fontSize: 11 },
+    userName: { color: 'white', fontSize: 13, fontWeight: '600' },
+    equalAmount: { color: '#8B5CF6', fontWeight: 'bold', fontSize: 13 },
+    removeBtn: { padding: 4 },
+
+    splitInputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0B1128', borderRadius: 8, paddingHorizontal: 8, height: 30, borderWidth: 1, borderColor: '#24335E', width: 65 },
+    splitInput: { flex: 1, color: 'white', textAlign: 'right', fontWeight: 'bold', fontSize: 12, padding: 0 },
+    splitUnit: { color: '#829AC9', fontSize: 10, marginLeft: 2 },
+
+    emptyText: { color: '#4B5E8A', textAlign: 'center', padding: 20, fontSize: 13 },
+
+    tallyBox: { backgroundColor: '#1C2854', borderRadius: 14, padding: 14, marginTop: 14, borderWidth: 1, borderColor: '#24335E' },
+    tallyBoxError: { borderColor: '#F59E0B' },
+    tallyMain: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+    tallyLabel: { color: 'white', fontSize: 13, fontWeight: '600' },
+    tallyValue: { color: '#8B5CF6', fontSize: 16, fontWeight: 'bold' },
+    tallyStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    tallyStatusText: { color: '#829AC9', fontSize: 11 },
+
+    footer: { flexDirection: 'row', gap: 12, marginTop: 20 },
+    cancelButton: { flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#131B3A', borderWidth: 1, borderColor: '#24335E' },
+    submitButton: { flex: 2, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#8B5CF6' },
+    buttonText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
 });
 
 export default AddExpenseModal;

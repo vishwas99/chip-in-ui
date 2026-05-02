@@ -132,7 +132,12 @@ const GroupItem = ({ group, currentUserId }: { group: Group, currentUserId?: str
                     )}
                     <View className="flex-1">
                         <Text className="text-[#E2E8F0] font-extrabold text-lg">{group.name}</Text>
-                        <Text className="text-[#829AC9] text-sm" numberOfLines={1}>{group.description || `${group.memberCount || 0} members`}</Text>
+                        <Text className="text-[#829AC9] text-sm" numberOfLines={1}>
+                            {group.description ||
+                                (group.lastActivity
+                                    ? `Active ${new Date(group.lastActivity).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                    : 'No recent activity')}
+                        </Text>
                     </View>
                 </View>
                 <View className="items-end max-w-[40%]">
@@ -245,13 +250,16 @@ const HomePage: React.FC<HomePageProps> = ({ onLogout, username }) => {
                     description: g.groupDescription || g.group?.description,
                     avatarUrl: g.imageUrl || g.group?.imageUrl || null,
                     createdAt: g.createdAt || g.group?.createdAt,
-                    userBalances: g.amountOwedByUser != null
-                        ? [{ amount: Math.abs(g.amountOwedByUser), currency: res.displayCurrencyCode || 'INR', status: g.amountOwedByUser > 0 ? 'OWES' : g.amountOwedByUser < 0 ? 'OWED' : 'SETTLED' }]
+                    userBalances: g.netBalance != null
+                        ? [{ amount: Math.abs(g.netBalance), currency: res.displayCurrencyCode || 'INR', status: g.netBalance > 0 ? 'OWED' : g.netBalance < 0 ? 'OWES' : 'SETTLED' }]
+                        : g.amountOwedByUser != null
+                        ? [{ amount: Math.abs(g.amountOwedByUser), currency: res.displayCurrencyCode || 'INR', status: g.amountOwedByUser > 0 ? 'OWED' : g.amountOwedByUser < 0 ? 'OWES' : 'SETTLED' }]
                         : (g.balances || []).map((b: any) => ({
                             amount: Math.abs(b.amount),
                             currency: b.currencyCode || b.currency || 'INR',
                             status: b.amount > 0 ? 'OWED' : b.amount < 0 ? 'OWES' : 'SETTLED',
                         })),
+                    lastActivity: g.lastActivity,
                 }));
                 setGroups(mappedGroups);
             }

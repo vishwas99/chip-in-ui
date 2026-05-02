@@ -10,7 +10,7 @@ Swagger UI is available at: `http://localhost:8080/swagger-ui/index.html` (once 
 
 ### 1.1 Signup
 *   **Endpoint**: `POST /auth/signup`
-*   **Description**: Register a new user.
+*   **Description**: Register a new user. If the user's email already exists with a `PENDING_INVITE` status, this will update their account with the new details and activate it.
 *   **Input Body** (all fields mandatory except phone):
     ```json
     {
@@ -36,9 +36,7 @@ Swagger UI is available at: `http://localhost:8080/swagger-ui/index.html` (once 
     ```json
     {
       "token": "eyJhbGci...",
-      "userId": "uuid",
-      "name": "John Doe",
-      "email": "john@example.com"
+      "expiresIn": 86400000
     }
     ```
 
@@ -227,13 +225,36 @@ Swagger UI is available at: `http://localhost:8080/swagger-ui/index.html` (once 
     }
     ```
 
+### 4.7 Get Group Users
+*   **Endpoint**: `GET /api/groups/users/{groupId}`
+*   **Description**: Fetch all members (users) of a specific group. The authenticated user must be a member of the group.
+*   **Path Params**: `groupId*` (UUID)
+*   **Output**: `200 OK` (List of `FriendResponse` objects) or `403 Forbidden` if the user is not in the group.
+    ```json
+    [
+      {
+        "userId": "uuid",
+        "name": "Member Name",
+        "email": "member@example.com",
+        "profilePicUrl": "https://link.to/pic.png"
+      }
+    ]
+    ```
+
+### 4.8 Delete Group
+*   **Endpoint**: `DELETE /api/groups/{groupId}`
+*   **Description**: Delete a group. Only group admins can perform this action. If `hardDelete` is true, all expenses are marked as deleted. If false (default), the group is deleted only if there are unsettled expenses; otherwise, an error is thrown suggesting to use hard delete.
+*   **Path Params**: `groupId*` (UUID)
+*   **Query Params**: `hardDelete` (boolean, optional, default: false)
+*   **Output**: `200 OK` ("Group deleted successfully") or `400 Bad Request` (e.g., "Cannot delete group: There are unsettled expenses. Use hard delete to force deletion.") or `403 Forbidden` (if not an admin)
+
 ---
 
 ## 5. Invitations (`/api/invitations`)
 
 ### 5.1 Invite New User
 *   **Endpoint**: `POST /api/invitations/invite`
-*   **Description**: Invites a new user to the platform. A temporary user account is created with `PENDING_INVITE` status, and an invitation email is sent. If a `groupId` is provided, the invited user is also added to that group as a non-admin member. If the user already exists and is in `PENDING_INVITE` status, the invitation is re-sent.
+*   **Description**: Invites a new user to the platform. A temporary user account is created with `PENDING_INVITE` status, and an invitation email is sent (currently mocked). If a `groupId` is provided, the invited user is also added to that group as a non-admin member. If the user already exists and is in `PENDING_INVITE` status, the invitation is re-sent.
 *   **Input Body** (mandatory fields marked with *):
     ```json
     {

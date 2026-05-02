@@ -560,3 +560,49 @@ export const recordSettlement = async (data: CreateSettlementRequest): Promise<s
         headers: { 'Content-Type': 'application/json' }
     });
 };
+
+// 4.7 Get all users in a group
+export const fetchGroupUsers = async (groupId: string): Promise<any[]> => {
+    return request(`/api/groups/users/${groupId}`, { method: 'GET' });
+};
+
+// 4.8 Delete a group
+export const deleteGroup = async (groupId: string, hardDelete: boolean = false): Promise<string> => {
+    return request(`/api/groups/${groupId}?hardDelete=${hardDelete}`, { method: 'DELETE' });
+};
+
+// 4.9 Get Group Balances
+export interface GroupBalanceUser {
+    userId: string;
+    userName: string;
+    netBalance: number;
+    balanceStatus: string;
+}
+
+export interface GroupTransaction {
+    transactionId: string;
+    type: 'EXPENSE' | 'SETTLEMENT';
+    description: string;
+    date: string;
+    amount: number;
+    currencyCode: string;
+}
+
+export interface GroupTransactionHistory {
+    otherUserId: string;
+    otherUserName: string;
+    netAmount: number;
+    transactions: GroupTransaction[];
+}
+
+export interface GroupBalancesResponse {
+    groupId: string;
+    groupName: string;
+    currencyCode: string;
+    userBalances: GroupBalanceUser[];
+    transactionHistory: GroupTransactionHistory[];
+}
+
+export const fetchGroupBalances = async (groupId: string): Promise<GroupBalancesResponse> => {
+    return request(`/api/groups/${groupId}/balances`, { method: 'GET' });
+};
